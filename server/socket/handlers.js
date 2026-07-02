@@ -3,7 +3,7 @@ const config = require('../config');
 const logger = require('../lib/logger');
 const bus = require('../event-bus');
 
-function setupSocketHandlers(io, db, services) {
+function setupSocketHandlers(io, prisma, services) {
   const { onlinePartners, spatialIndex, oms, riderAssignment, notifyUser } = services;
 
   io.use((socket, next) => {
@@ -25,13 +25,13 @@ function setupSocketHandlers(io, db, services) {
     logger.info({ userId: user.id, role: user.role, socketId: socket.id }, 'Socket connected');
 
     if (user.role === 'partner') {
-      const row = await db.queryOne(
-        'SELECT services_offered, location FROM users WHERE id = ?',
-        [user.id]
-      );
+      const row = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { servicesOffered: true, location: true },
+      });
       let parsedServices = [];
       try {
-        parsedServices = JSON.parse(row?.services_offered || '[]');
+        parsedServices = JSON.parse(row?.servicesOffered || '[]');
       } catch {}
 
       onlinePartners.set(user.id, {
@@ -44,13 +44,11 @@ function setupSocketHandlers(io, db, services) {
 
     socket.on('partner:location', async (data) => {
       if (user.role !== 'partner') return;
-      await db.execute(
-        `INSERT INTO pro_availability (partner_id, is_available, lat, lng, updated_at)
-         VALUES (?, 1, ?, ?, NOW())
-         ON CONFLICT (partner_id) DO UPDATE
-         SET is_available = 1, lat = EXCLUDED.lat, lng = EXCLUDED.lng, updated_at = NOW()`,
-        [user.id, data.lat, data.lng]
-      );
+      await prisma.proAvailability.upsert({
+        where: { partnerId: user.id },
+        update: { isAvailable: 1, lat: data.lat, lng: data.lng, updatedAt: new Date() },
+        create: { partnerId: user.id, isAvailable: 1, lat: data.lat, lng: data.lng },
+      });
       onlinePartners.set(user.id, { ...(onlinePartners.get(user.id) || {}), lat: data.lat, lng: data.lng });
       spatialIndex.upsert({ id: user.id, lat: data.lat, lng: data.lng });
 
@@ -103,18 +101,17 @@ function setupSocketHandlers(io, db, services) {
     });
 
     socket.on('partner:accept', async (bookingId) => {
-      const booking = await db.queryOne(
-        'SELECT * FROM bookings WHERE id = ? AND status = ?',
-        [bookingId, 'pending']
-      );
+      const booking = await prisma.booking.findFirst({
+        where: { id: bookingId, status: 'pending' },
+      });
       if (!booking) return socket.emit('error', { message: 'Booking not available' });
 
-      await db.execute(
-        'UPDATE bookings SET status = ?, partner_id = ? WHERE id = ?',
-        ['accepted', user.id, bookingId]
-      );
-      await notifyUser(booking.customer_id, 'in_app', 'Job Accepted', `${user.name} has accepted your request.`);
-      io.to(`user:${booking.customer_id}`).emit('booking:updated', {
+      await prisma.booking.update({
+        where: { id: bookingId },
+        data: { status: 'accepted', partnerId: user.id },
+      });
+      await notifyUser(booking.customerId, 'in_app', 'Job Accepted', `${user.name} has accepted your request.`);
+      io.to(`user:${booking.customerId}`).emit('booking:updated', {
         id: bookingId,
         status: 'accepted',
         partnerId: user.id,
@@ -124,35 +121,37 @@ function setupSocketHandlers(io, db, services) {
     });
 
     socket.on('partner:decline', async (bookingId) => {
-      await db.execute(
-        'INSERT INTO declined_bookings (booking_id, partner_id) VALUES (?, ?) ON CONFLICT DO NOTHING',
-        [bookingId, user.id]
-      );
+      await prisma.declinedBooking.upsert({
+        where: { bookingId_partnerId: { bookingId, partnerId: user.id } },
+        update: {},
+        create: { bookingId, partnerId: user.id },
+      });
       socket.emit('booking:declined', { id: bookingId });
     });
 
     socket.on('partner:complete', async (bookingId) => {
-      const booking = await db.queryOne(
-        'SELECT * FROM bookings WHERE id = ? AND partner_id = ?',
-        [bookingId, user.id]
-      );
+      const booking = await prisma.booking.findFirst({
+        where: { id: bookingId, partnerId: user.id },
+      });
       if (!booking) return socket.emit('error', { message: 'Not authorized' });
-      await db.execute('UPDATE bookings SET status = ? WHERE id = ?', ['completed', bookingId]);
-      await db.execute(
-        'UPDATE users SET jobs_completed = jobs_completed + 1 WHERE id = ?',
-        [user.id]
-      );
-      await notifyUser(booking.customer_id, 'email', 'Service Complete!', 'Please rate your experience.');
-      io.to(`user:${booking.customer_id}`).emit('booking:updated', { id: bookingId, status: 'completed' });
+      await prisma.booking.update({
+        where: { id: bookingId },
+        data: { status: 'completed' },
+      });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { jobsCompleted: { increment: 1 } },
+      });
+      await notifyUser(booking.customerId, 'email', 'Service Complete!', 'Please rate your experience.');
+      io.to(`user:${booking.customerId}`).emit('booking:updated', { id: bookingId, status: 'completed' });
       socket.emit('booking:completed', { id: bookingId });
     });
 
     socket.on('chat:send', async (data) => {
       const { bookingId, message } = data;
-      await db.execute(
-        'INSERT INTO chat_messages (booking_id, sender_id, message) VALUES (?, ?, ?)',
-        [bookingId, user.id, message]
-      );
+      await prisma.chatMessage.create({
+        data: { bookingId, senderId: user.id, message },
+      });
       io.to(`booking:${bookingId}`).emit('chat:message', {
         id: Date.now(),
         bookingId,

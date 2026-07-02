@@ -1,33 +1,46 @@
 const express = require('express');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken } = require('../middleware/auth');
-const { validate, chatMessageSchema } = require('../middleware/validate');
 
-module.exports = function (db, io) {
+module.exports = function (prisma, io) {
   const router = express.Router();
 
-  router.get('/:bookingId', authenticateToken, asyncHandler(async (req, res) => {
-    const messages = await db.query(`
-      SELECT c.*, u.name as sender_name
-      FROM chat_messages c JOIN users u ON c.sender_id = u.id
-      WHERE c.booking_id = ? ORDER BY c.created_at ASC
-    `, [req.params.bookingId]);
-    res.json(messages);
+  router.get('/:bookingId/messages', authenticateToken, asyncHandler(async (req, res) => {
+    const messages = await prisma.chatMessage.findMany({
+      where: { bookingId: req.params.bookingId },
+      include: { sender: { select: { name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const mapped = messages.map((m) => ({
+      id: m.id,
+      bookingId: m.bookingId,
+      senderId: m.senderId,
+      senderName: m.sender?.name || 'Unknown',
+      message: m.message,
+      createdAt: m.createdAt,
+    }));
+    res.json(mapped);
   }));
 
-  router.post('/:bookingId', authenticateToken, validate(chatMessageSchema), asyncHandler(async (req, res) => {
+  router.post('/:bookingId/messages', authenticateToken, asyncHandler(async (req, res) => {
     const { message } = req.body;
-    const result = await db.execute(
-      'INSERT INTO chat_messages (booking_id, sender_id, message) VALUES (?, ?, ?) RETURNING *',
-      [req.params.bookingId, req.user.id, message]
-    );
-    const msg = {
-      ...result.rows[0],
-      senderId: req.user.id,
-      senderName: req.user.name,
-      createdAt: new Date().toISOString(),
-    };
-    io.to(`booking:${req.params.bookingId}`).emit('chat:message', msg);
+    if (!message) return res.status(400).json({ error: 'Message required' });
+    const msg = await prisma.chatMessage.create({
+      data: {
+        bookingId: req.params.bookingId,
+        senderId: req.user.id,
+        message,
+      },
+      include: { sender: { select: { name: true } } },
+    });
+    io.to(`booking:${req.params.bookingId}`).emit('chat:message', {
+      id: msg.id,
+      bookingId: msg.bookingId,
+      senderId: msg.senderId,
+      senderName: msg.sender?.name || 'Unknown',
+      message: msg.message,
+      createdAt: msg.createdAt,
+    });
     res.status(201).json(msg);
   }));
 

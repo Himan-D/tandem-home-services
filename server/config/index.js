@@ -42,6 +42,10 @@ const config = {
   auth: {
     jwtSecret: env.JWT_SECRET || 'change-me-in-production',
     jwtExpiry: env.JWT_EXPIRY || '24h',
+    accessTokenExpiry: env.ACCESS_TOKEN_EXPIRY || '15m',
+    refreshTokenExpiry: env.REFRESH_TOKEN_EXPIRY || '7d',
+    bootstrapEmail: env.BOOTSTRAP_ADMIN_EMAIL || 'admin@lumina.app',
+    bootstrapPassword: env.BOOTSTRAP_ADMIN_PASSWORD || 'changeme123',
   },
 
   rider: {
@@ -76,6 +80,14 @@ const config = {
     snapBatchSize: parseInt(env.GPS_SNAP_BATCH_SIZE || '100'),
     kalmanProcessNoise: parseFloat(env.GPS_KALMAN_PROCESS_NOISE || '3'),
     kalmanMeasurementNoise: parseFloat(env.GPS_KALMAN_MEASUREMENT_NOISE || '10'),
+  },
+
+  shifts: {
+    autoOfflineCron: env.SHIFTS_AUTO_OFFLINE_CRON || '*/5 * * * *',
+  },
+
+  serviceAreas: {
+    defaultPriceZone: parseFloat(env.SERVICE_AREA_DEFAULT_PRICE_ZONE || '1.0'),
   },
 
   geofence: {

@@ -4,7 +4,7 @@ const { authenticateToken } = require('../middleware/auth');
 const { validate, createOrderSchema } = require('../middleware/validate');
 const { orderLimiter, rateLimit } = require('../middleware/rateLimit');
 
-module.exports = function (db, io, services) {
+module.exports = function (prisma, io, services) {
   const router = express.Router();
   const { oms } = services;
 

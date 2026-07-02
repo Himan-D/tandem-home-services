@@ -19,22 +19,23 @@ const updateServiceSchema = z.object({
   isActive: z.number().int().min(0).max(1).optional(),
 });
 
-module.exports = function (db) {
+module.exports = function (prisma) {
   const router = express.Router();
 
   router.get('/', asyncHandler(async (req, res) => {
     const { category, active } = req.query;
-    let sql = 'SELECT * FROM services WHERE 1=1';
-    const params = [];
-    if (category) { sql += ' AND category = ?'; params.push(category); }
-    if (active !== undefined) { sql += ' AND is_active = ?'; params.push(active === 'true' ? 1 : 0); }
-    sql += ' ORDER BY category, title';
-    const services = await db.query(sql, params);
+    const where = {};
+    if (category) where.category = category;
+    if (active !== undefined) where.isActive = active === 'true' ? 1 : 0;
+    const services = await prisma.service.findMany({
+      where,
+      orderBy: [{ category: 'asc' }, { title: 'asc' }],
+    });
     res.json(services);
   }));
 
   router.get('/:id', asyncHandler(async (req, res) => {
-    const service = await db.queryOne('SELECT * FROM services WHERE id = ?', [req.params.id]);
+    const service = await prisma.service.findUnique({ where: { id: String(req.params.id) } });
     if (!service) return res.status(404).json({ error: 'Service not found' });
     res.json(service);
   }));
@@ -43,40 +44,40 @@ module.exports = function (db) {
     const { id, title, basePrice, category, isActive } = req.body;
     const serviceId = id || title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
     try {
-      const result = await db.execute(
-        'INSERT INTO services (id, title, base_price, category, is_active) VALUES (?, ?, ?, ?, ?) RETURNING *',
-        [serviceId, title, basePrice, category, isActive]
-      );
-      res.status(201).json(result.rows[0]);
+      const service = await prisma.service.create({
+        data: { id: serviceId, title, basePrice, category, isActive },
+      });
+      res.status(201).json(service);
     } catch {
       res.status(409).json({ error: 'Service ID already exists' });
     }
   }));
 
   router.put('/:id', authenticateToken, requireRole('admin'), validate(updateServiceSchema), asyncHandler(async (req, res) => {
-    const existing = await db.queryOne('SELECT * FROM services WHERE id = ?', [req.params.id]);
+    const existing = await prisma.service.findUnique({ where: { id: String(req.params.id) } });
     if (!existing) return res.status(404).json({ error: 'Service not found' });
 
-    const sets = [];
-    const params = [];
-    if (req.body.title !== undefined) { sets.push('title = ?'); params.push(req.body.title); }
-    if (req.body.basePrice !== undefined) { sets.push('base_price = ?'); params.push(req.body.basePrice); }
-    if (req.body.category !== undefined) { sets.push('category = ?'); params.push(req.body.category); }
-    if (req.body.isActive !== undefined) { sets.push('is_active = ?'); params.push(req.body.isActive); }
-    if (sets.length === 0) return res.json(existing);
+    const data = {};
+    if (req.body.title !== undefined) data.title = req.body.title;
+    if (req.body.basePrice !== undefined) data.basePrice = req.body.basePrice;
+    if (req.body.category !== undefined) data.category = req.body.category;
+    if (req.body.isActive !== undefined) data.isActive = req.body.isActive;
+    if (Object.keys(data).length === 0) return res.json(existing);
 
-    params.push(req.params.id);
-    const result = await db.execute(
-      `UPDATE services SET ${sets.join(', ')} WHERE id = ? RETURNING *`,
-      params
-    );
-    res.json(result.rows[0]);
+    const service = await prisma.service.update({
+      where: { id: String(req.params.id) },
+      data,
+    });
+    res.json(service);
   }));
 
   router.delete('/:id', authenticateToken, requireRole('admin'), asyncHandler(async (req, res) => {
-    const result = await db.execute('DELETE FROM services WHERE id = ? RETURNING id', [req.params.id]);
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Service not found' });
-    res.json({ success: true });
+    try {
+      await prisma.service.delete({ where: { id: String(req.params.id) } });
+      res.json({ success: true });
+    } catch {
+      return res.status(404).json({ error: 'Service not found' });
+    }
   }));
 
   return router;

@@ -1,87 +1,139 @@
 const express = require('express');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken, requireRole } = require('../middleware/auth');
-const geo = require('../lib/geo');
 
-module.exports = function (db, io, services) {
+module.exports = function (prisma, io, services) {
   const router = express.Router();
   const { onlinePartners, oms, spatialIndex } = services;
 
   router.use(authenticateToken, requireRole('admin'));
 
   router.get('/stats', asyncHandler(async (req, res) => {
-    const [pros, jobs, revenue, ratings, partners, darkStores, orders, lowStock] = await Promise.all([
-      db.queryOne("SELECT COUNT(*) as count FROM users WHERE role = 'partner'"),
-      db.queryOne('SELECT COUNT(*) as count FROM bookings'),
-      db.queryOne('SELECT COALESCE(SUM(payout), 0) as sum FROM bookings WHERE status = ? AND created_at > NOW() - INTERVAL \'30 days\'', ['completed']),
-      db.queryOne('SELECT AVG(rating) as avg FROM ratings'),
-      db.query("SELECT id, name, lat, lng FROM users WHERE role = 'partner' AND lat IS NOT NULL"),
-      db.queryOne('SELECT COUNT(*) as count, COALESCE(SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END), 0) as active FROM dark_stores'),
-      db.queryOne("SELECT COUNT(*) as count FROM order_state_machine WHERE status NOT IN ('completed', 'cancelled', 'failed')"),
-      db.query('SELECT i.dark_store_id, ds.name, s.title FROM inventory i JOIN dark_stores ds ON i.dark_store_id = ds.id JOIN services s ON i.service_id = s.id WHERE i.quantity <= i.min_threshold'),
+    const [prosCount, jobsCount, revenueAgg, ratingsAgg, totalDarkStores, activeDarkStores, ordersCount, lowStock] = await Promise.all([
+      prisma.user.count({ where: { role: 'partner' } }),
+      prisma.booking.count(),
+      prisma.booking.aggregate({
+        _sum: { payout: true },
+        where: {
+          status: 'completed',
+          createdAt: { gt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+        },
+      }),
+      prisma.rating.aggregate({ _avg: { rating: true } }),
+      prisma.darkStore.count(),
+      prisma.darkStore.count({ where: { isActive: 1 } }),
+      prisma.orderStateMachine.count({
+        where: { status: { notIn: ['completed', 'cancelled', 'failed'] } },
+      }),
+      prisma.$queryRaw`
+        SELECT i.dark_store_id, ds.name, s.title FROM inventory i
+        JOIN dark_stores ds ON i.dark_store_id = ds.id
+        JOIN services s ON i.service_id = s.id
+        WHERE i.quantity <= i.min_threshold
+      `,
     ]);
 
     res.json({
-      activePros: pros.count,
+      activePros: prosCount,
       onlinePros: onlinePartners.size,
-      jobsToday: jobs.count,
-      avgRating: ratings.avg ? parseFloat(ratings.avg).toFixed(1) : null,
-      revenue30d: Math.round(revenue.sum * 1.33),
-      darkStores: darkStores.count,
-      activeDarkStores: darkStores.active,
-      activeOrders: orders.count,
+      jobsToday: jobsCount,
+      avgRating: ratingsAgg._avg.rating ? parseFloat(String(ratingsAgg._avg.rating)).toFixed(1) : null,
+      revenue30d: Math.round((revenueAgg._sum.payout || 0) * 1.33),
+      darkStores: totalDarkStores,
+      activeDarkStores,
+      activeOrders: ordersCount,
       lowStockAlerts: lowStock,
     });
   }));
 
   router.get('/partners', asyncHandler(async (req, res) => {
-    const partners = await db.query(`
-      SELECT u.id, u.name, u.email, u.phone, u.location, u.lat, u.lng, u.rating_avg,
-             u.jobs_completed, u.is_plus_member, u.services_offered, u.created_at,
-             (u.lat IS NOT NULL AND u.lng IS NOT NULL) as has_location
-      FROM users u WHERE u.role = 'partner' ORDER BY u.created_at DESC
-    `);
+    const partners = await prisma.user.findMany({
+      where: { role: 'partner' },
+      select: {
+        id: true, name: true, email: true, phone: true, location: true,
+        lat: true, lng: true, ratingAvg: true, jobsCompleted: true,
+        isPlusMember: true, servicesOffered: true, createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
     res.json(partners.map((p) => ({
       ...p,
-      services_offered: (() => { try { return JSON.parse(p.services_offered || '[]'); } catch { return []; } })(),
+      hasLocation: p.lat !== null && p.lng !== null,
       online: onlinePartners.has(p.id),
+      servicesOffered: (() => { try { return JSON.parse(p.servicesOffered || '[]'); } catch { return []; })(),
     })));
   }));
 
   router.get('/customers', asyncHandler(async (req, res) => {
-    const customers = await db.query(`
-      SELECT u.id, u.name, u.email, u.phone, u.location, u.wallet_balance,
-             u.is_plus_member, u.created_at,
-             (SELECT COUNT(*) FROM bookings b WHERE b.customer_id = u.id) as total_bookings
-      FROM users u WHERE u.role = 'consumer' ORDER BY u.created_at DESC
-    `);
-    res.json(customers);
+    const customers = await prisma.user.findMany({
+      where: { role: 'consumer' },
+      select: {
+        id: true, name: true, email: true, phone: true, location: true,
+        walletBalance: true, isPlusMember: true, createdAt: true,
+        _count: { select: { bookingsAsCustomer: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(customers.map((c) => ({
+      id: c.id, name: c.name, email: c.email, phone: c.phone,
+      location: c.location, wallet_balance: c.walletBalance,
+      is_plus_member: c.isPlusMember, created_at: c.createdAt,
+      total_bookings: c._count.bookingsAsCustomer,
+    })));
   }));
 
   router.get('/complaints', asyncHandler(async (req, res) => {
-    const complaints = await db.query(`
-      SELECT c.*, u.name as customer_name, b.service_title
-      FROM complaints c
-      LEFT JOIN users u ON c.customer_id = u.id
-      LEFT JOIN bookings b ON c.booking_id = b.id
-      ORDER BY c.created_at DESC
-    `);
-    res.json(complaints);
+    const complaints = await prisma.complaint.findMany({
+      include: { customer: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const withBookingTitles = await Promise.all(
+      complaints.map(async (c) => {
+        let serviceTitle = null;
+        if (c.bookingId) {
+          const booking = await prisma.booking.findUnique({
+            where: { id: c.bookingId },
+            select: { serviceTitle: true },
+          });
+          serviceTitle = booking?.serviceTitle || null;
+        }
+        return {
+          id: c.id, bookingId: c.bookingId, customerId: c.customerId,
+          reason: c.reason, description: c.description, status: c.status,
+          createdAt: c.createdAt, customer_name: c.customer?.name || 'Unknown',
+          service_title: serviceTitle,
+        };
+      })
+    );
+    res.json(withBookingTitles);
   }));
 
   router.patch('/complaints/:id/resolve', asyncHandler(async (req, res) => {
-    const result = await db.execute("UPDATE complaints SET status = 'resolved' WHERE id = ? RETURNING *", [req.params.id]);
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Complaint not found' });
-    res.json(result.rows[0]);
+    try {
+      const complaint = await prisma.complaint.update({
+        where: { id: parseInt(req.params.id) },
+        data: { status: 'resolved' },
+      });
+      res.json(complaint);
+    } catch {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
   }));
 
   router.get('/notifications', asyncHandler(async (req, res) => {
-    const notifs = await db.query('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50', [req.user.id]);
+    const notifs = await prisma.notification.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
     res.json(notifs);
   }));
 
   router.patch('/notifications/:id/read', asyncHandler(async (req, res) => {
-    await db.execute('UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    await prisma.notification.updateMany({
+      where: { id: parseInt(req.params.id), userId: req.user.id },
+      data: { read: 1 },
+    });
     res.json({ success: true });
   }));
 
@@ -95,21 +147,45 @@ module.exports = function (db, io, services) {
   }));
 
   router.post('/spatial-index/rebuild', asyncHandler(async (req, res) => {
-    const partners = await db.query("SELECT id, name, lat, lng FROM users WHERE role = 'partner' AND lat IS NOT NULL AND lng IS NOT NULL");
+    const partners = await prisma.user.findMany({
+      where: { role: 'partner', lat: { not: null }, lng: { not: null } },
+      select: { id: true, name: true, lat: true, lng: true },
+    });
     spatialIndex.load(partners);
     res.json({ success: true, count: partners.length });
   }));
 
   router.get('/orders', asyncHandler(async (req, res) => {
-    const orders = await db.query(`
-      SELECT os.*, u.name as customer_name, u2.name as rider_name, ds.name as store_name
-      FROM order_state_machine os
-      LEFT JOIN users u ON os.customer_id = u.id
-      LEFT JOIN users u2 ON os.rider_id = u2.id
-      LEFT JOIN dark_stores ds ON os.dark_store_id = ds.id
-      ORDER BY os.created_at DESC LIMIT 100
-    `);
-    res.json(orders);
+    const orders = await prisma.orderStateMachine.findMany({
+      include: {
+        customer: { select: { name: true } },
+        rider: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    const enriched = await Promise.all(
+      orders.map(async (o) => {
+        let storeName = null;
+        if (o.darkStoreId) {
+          const store = await prisma.darkStore.findUnique({
+            where: { id: o.darkStoreId },
+            select: { name: true },
+          });
+          storeName = store?.name || null;
+        }
+        return {
+          id: o.id, idempotencyKey: o.idempotencyKey, customerId: o.customerId,
+          serviceId: o.serviceId, darkStoreId: o.darkStoreId, riderId: o.riderId,
+          status: o.status, amount: o.amount, location: o.location,
+          lat: o.lat, lng: o.lng, createdAt: o.createdAt,
+          customer_name: o.customer?.name || null,
+          rider_name: o.rider?.name || null,
+          store_name: storeName,
+        };
+      })
+    );
+    res.json(enriched);
   }));
 
   return router;

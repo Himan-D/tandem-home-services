@@ -1,8 +1,10 @@
 const cron = require('node-cron');
 const logger = require('./lib/logger');
 
-function setupScheduledTasks(db, services) {
-  const { oms } = services;
+const config = require('./config');
+
+function setupScheduledTasks(prisma, services) {
+  const { oms, shiftManager } = services;
 
   cron.schedule('*/15 * * * *', async () => {
     try {
@@ -23,13 +25,13 @@ function setupScheduledTasks(db, services) {
 
   cron.schedule('0 * * * *', async () => {
     try {
-      const lowStock = await db.query(`
+      const lowStock = await prisma.$queryRaw`
         SELECT i.*, ds.name as store_name, s.title as service_title
         FROM inventory i
         JOIN dark_stores ds ON i.dark_store_id = ds.id
         JOIN services s ON i.service_id = s.id
         WHERE i.quantity <= i.min_threshold
-      `);
+      `;
       if (lowStock.length === 0) return;
       logger.warn({ count: lowStock.length, items: lowStock.slice(0, 10) }, 'Low stock detected');
     } catch (err) {
@@ -39,14 +41,26 @@ function setupScheduledTasks(db, services) {
 
   cron.schedule('0 2 * * *', async () => {
     try {
-      const result = await db.execute('DELETE FROM auth_tokens WHERE expires_at < NOW()');
-      logger.info({ deleted: result.rowCount }, 'Expired auth tokens cleaned up');
+      const result = await prisma.authToken.deleteMany({
+        where: { expiresAt: { lt: new Date() } },
+      });
+      logger.info({ deleted: result.count }, 'Expired auth tokens cleaned up');
     } catch (err) {
       logger.error({ err: err.message }, 'Auth token cleanup failed');
     }
   });
 
-  logger.info('Scheduled tasks registered (stuck-orders/15min, low-stock/hourly, token-cleanup/daily)');
+  if (shiftManager) {
+    cron.schedule(config.shifts.autoOfflineCron, async () => {
+      try {
+        await shiftManager.autoOfflinePartners();
+      } catch (err) {
+        logger.error({ err: err.message }, 'Auto-offline check failed');
+      }
+    });
+  }
+
+  logger.info('Scheduled tasks registered (stuck-orders/15min, low-stock/hourly, token-cleanup/daily, auto-offline/5min)');
 }
 
 module.exports = { setupScheduledTasks };

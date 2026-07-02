@@ -3,7 +3,6 @@ const { z } = require('zod');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
-const geo = require('../lib/geo');
 
 const createStoreSchema = z.object({
   name: z.string().min(2).max(200),
@@ -27,16 +26,16 @@ const upsertInventorySchema = z.object({
   minThreshold: z.number().int().min(0).optional(),
 });
 
-module.exports = function (db) {
+module.exports = function (prisma) {
   const router = express.Router();
 
   router.get('/', authenticateToken, requireRole('admin'), asyncHandler(async (req, res) => {
-    const stores = await db.query(`
+    const stores = await prisma.$queryRaw`
       SELECT ds.*,
         (SELECT COUNT(*) FROM inventory i WHERE i.dark_store_id = ds.id AND i.quantity > 0) as active_skus,
         (SELECT COALESCE(SUM(quantity), 0) FROM inventory i WHERE i.dark_store_id = ds.id) as total_stock
       FROM dark_stores ds ORDER BY ds.created_at DESC
-    `);
+    `;
     res.json(stores);
   }));
 
@@ -46,95 +45,102 @@ module.exports = function (db) {
     const radiusKm = parseFloat(req.query.radius || '10');
     if (isNaN(lat) || isNaN(lng)) return res.status(400).json({ error: 'lat and lng required' });
 
-    const stores = await db.query(`
+    const stores = await prisma.$queryRaw`
       SELECT ds.id, ds.name, ds.location, ds.lat, ds.lng,
-        ${geo.distanceSphereKmExpr(lat, lng, 'ds.lat', 'ds.lng')} as distance_km,
+        ST_DistanceSphere(ST_MakePoint(ds.lng, ds.lat), ST_MakePoint(${lng}, ${lat})) / 1000 as distance_km,
         (SELECT COUNT(*) FROM inventory i WHERE i.dark_store_id = ds.id AND i.quantity > 0) as active_skus
       FROM dark_stores ds
       WHERE ds.is_active = 1
-        AND ${geo.dWithinExpr(lat, lng, 'ds.lat', 'ds.lng', radiusKm * 1000)}
+        AND ST_DWithin(ST_MakePoint(ds.lng, ds.lat)::geography, ST_MakePoint(${lng}, ${lat})::geography, ${radiusKm * 1000})
       ORDER BY distance_km ASC
-    `);
+    `;
     res.json(stores);
   }));
 
   router.get('/:id', authenticateToken, requireRole('admin'), asyncHandler(async (req, res) => {
-    const store = await db.queryOne(`
-      SELECT ds.*,
-        (SELECT COALESCE(SUM(quantity), 0) FROM inventory i WHERE i.dark_store_id = ds.id) as total_stock
-      FROM dark_stores ds WHERE ds.id = ?
-    `, [req.params.id]);
+    const id = parseInt(req.params.id);
+    const store = await prisma.darkStore.findUnique({ where: { id } });
     if (!store) return res.status(404).json({ error: 'Dark store not found' });
-    res.json(store);
+    const totalStock = await prisma.inventory.aggregate({
+      _sum: { quantity: true },
+      where: { darkStoreId: id },
+    });
+    res.json({ ...store, total_stock: totalStock._sum.quantity || 0 });
   }));
 
   router.post('/', authenticateToken, requireRole('admin'), validate(createStoreSchema), asyncHandler(async (req, res) => {
     const { name, location, lat, lng, isActive } = req.body;
-    const result = await db.execute(
-      'INSERT INTO dark_stores (name, location, lat, lng, is_active) VALUES (?, ?, ?, ?, ?) RETURNING *',
-      [name, location, lat, lng, isActive]
-    );
-    res.status(201).json(result.rows[0]);
+    const store = await prisma.darkStore.create({
+      data: { name, location, lat, lng, isActive },
+    });
+    res.status(201).json(store);
   }));
 
   router.put('/:id', authenticateToken, requireRole('admin'), validate(updateStoreSchema), asyncHandler(async (req, res) => {
-    const existing = await db.queryOne('SELECT * FROM dark_stores WHERE id = ?', [req.params.id]);
+    const id = parseInt(req.params.id);
+    const existing = await prisma.darkStore.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Dark store not found' });
 
-    const sets = [];
-    const params = [];
-    if (req.body.name !== undefined) { sets.push('name = ?'); params.push(req.body.name); }
-    if (req.body.location !== undefined) { sets.push('location = ?'); params.push(req.body.location); }
-    if (req.body.lat !== undefined) { sets.push('lat = ?'); params.push(req.body.lat); }
-    if (req.body.lng !== undefined) { sets.push('lng = ?'); params.push(req.body.lng); }
-    if (req.body.isActive !== undefined) { sets.push('is_active = ?'); params.push(req.body.isActive); }
-    if (sets.length === 0) return res.json(existing);
+    const data = {};
+    if (req.body.name !== undefined) data.name = req.body.name;
+    if (req.body.location !== undefined) data.location = req.body.location;
+    if (req.body.lat !== undefined) data.lat = req.body.lat;
+    if (req.body.lng !== undefined) data.lng = req.body.lng;
+    if (req.body.isActive !== undefined) data.isActive = req.body.isActive;
+    if (Object.keys(data).length === 0) return res.json(existing);
 
-    params.push(req.params.id);
-    const result = await db.execute(
-      `UPDATE dark_stores SET ${sets.join(', ')} WHERE id = ? RETURNING *`,
-      params
-    );
-    res.json(result.rows[0]);
+    const store = await prisma.darkStore.update({ where: { id }, data });
+    res.json(store);
   }));
 
   router.delete('/:id', authenticateToken, requireRole('admin'), asyncHandler(async (req, res) => {
-    const result = await db.execute('DELETE FROM dark_stores WHERE id = ? RETURNING id', [req.params.id]);
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Dark store not found' });
-    res.json({ success: true });
+    try {
+      await prisma.darkStore.delete({ where: { id: parseInt(req.params.id) } });
+      res.json({ success: true });
+    } catch {
+      return res.status(404).json({ error: 'Dark store not found' });
+    }
   }));
 
   router.get('/:id/inventory', authenticateToken, requireRole('admin'), asyncHandler(async (req, res) => {
-    const items = await db.query(`
+    const items = await prisma.$queryRaw`
       SELECT i.*, s.title as service_title, s.category
       FROM inventory i JOIN services s ON i.service_id = s.id
-      WHERE i.dark_store_id = ?
+      WHERE i.dark_store_id = ${parseInt(req.params.id)}
       ORDER BY s.category, s.title
-    `, [req.params.id]);
+    `;
     res.json(items);
   }));
 
   router.put('/:id/inventory', authenticateToken, requireRole('admin'), validate(upsertInventorySchema), asyncHandler(async (req, res) => {
+    const darkStoreId = parseInt(req.params.id);
     const { serviceId, quantity, minThreshold } = req.body;
-    const result = await db.execute(`
-      INSERT INTO inventory (dark_store_id, service_id, quantity, min_threshold, updated_at)
-      VALUES (?, ?, ?, ?, NOW())
-      ON CONFLICT (dark_store_id, service_id)
-      DO UPDATE SET quantity = EXCLUDED.quantity,
-        min_threshold = COALESCE(EXCLUDED.min_threshold, inventory.min_threshold),
-        updated_at = NOW()
-      RETURNING *
-    `, [req.params.id, serviceId, quantity, minThreshold || 5]);
-    res.json(result.rows[0]);
+    const result = await prisma.inventory.upsert({
+      where: {
+        darkStoreId_serviceId: { darkStoreId, serviceId },
+      },
+      update: {
+        quantity,
+        minThreshold: minThreshold || 5,
+        updatedAt: new Date(),
+      },
+      create: {
+        darkStoreId,
+        serviceId,
+        quantity,
+        minThreshold: minThreshold || 5,
+      },
+    });
+    res.json(result);
   }));
 
   router.get('/:id/inventory/low', authenticateToken, requireRole('admin'), asyncHandler(async (req, res) => {
-    const items = await db.query(`
+    const items = await prisma.$queryRaw`
       SELECT i.*, s.title as service_title
       FROM inventory i JOIN services s ON i.service_id = s.id
-      WHERE i.dark_store_id = ? AND i.quantity <= i.min_threshold
+      WHERE i.dark_store_id = ${parseInt(req.params.id)} AND i.quantity <= i.min_threshold
       ORDER BY i.quantity ASC
-    `, [req.params.id]);
+    `;
     res.json(items);
   }));
 

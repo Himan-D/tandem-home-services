@@ -2,7 +2,7 @@ const express = require('express');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken } = require('../middleware/auth');
 
-module.exports = function (db, io, services) {
+module.exports = function (prisma, io, services) {
   const router = express.Router();
   const { trackingService, oms } = services;
 
@@ -36,16 +36,16 @@ module.exports = function (db, io, services) {
   }));
 
   router.post('/orders/:orderId/otp', authenticateToken, asyncHandler(async (req, res) => {
-    const order = await db.queryOne(
-      'SELECT id, customer_id, rider_id, status FROM order_state_machine WHERE id = ?',
-      [req.params.orderId]
-    );
+    const order = await prisma.orderStateMachine.findUnique({
+      where: { id: req.params.orderId },
+      select: { id: true, customerId: true, riderId: true, status: true },
+    });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     const canGenerate =
       (req.user.role === 'admin') ||
-      (req.user.id === order.rider_id) ||
-      (req.user.id === order.customer_id);
+      (req.user.id === order.riderId) ||
+      (req.user.id === order.customerId);
 
     if (!canGenerate) return res.status(403).json({ error: 'Not authorized' });
 
@@ -55,11 +55,11 @@ module.exports = function (db, io, services) {
 
     const otp = trackingService.generateOtp(req.params.orderId);
 
-    if (req.user.id === order.customer_id) {
+    if (req.user.id === order.customerId) {
       res.json({ otp, message: 'Share this code with your service provider' });
     } else {
       res.json({ generated: true, message: 'OTP sent to customer' });
-      io.to(`user:${order.customer_id}`).emit('otp:share', {
+      io.to(`user:${order.customerId}`).emit('otp:share', {
         orderId: order.id,
         otp,
       });
@@ -70,12 +70,12 @@ module.exports = function (db, io, services) {
     const { otp } = req.body;
     if (!otp) return res.status(400).json({ error: 'OTP required' });
 
-    const order = await db.queryOne(
-      'SELECT id, customer_id, rider_id, status FROM order_state_machine WHERE id = ?',
-      [req.params.orderId]
-    );
+    const order = await prisma.orderStateMachine.findUnique({
+      where: { id: req.params.orderId },
+      select: { id: true, customerId: true, riderId: true, status: true },
+    });
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (req.user.id !== order.rider_id) return res.status(403).json({ error: 'Partner only' });
+    if (req.user.id !== order.riderId) return res.status(403).json({ error: 'Partner only' });
     if (order.status !== 'arrived') {
       return res.status(400).json({ error: `Order must be arrived first, current: ${order.status}` });
     }
@@ -85,14 +85,14 @@ module.exports = function (db, io, services) {
       return res.status(400).json({ error: result.reason, attemptsLeft: result.attemptsLeft });
     }
 
-    await db.execute(
-      `UPDATE order_state_machine SET status = 'service_started', updated_at = NOW() WHERE id = ?`,
-      [req.params.orderId]
-    );
+    await prisma.orderStateMachine.update({
+      where: { id: req.params.orderId },
+      data: { status: 'service_started', updatedAt: new Date() },
+    });
 
     trackingService.clearOtp(req.params.orderId);
 
-    io.to(`user:${order.customer_id}`).emit('service:started', {
+    io.to(`user:${order.customerId}`).emit('service:started', {
       orderId: order.id,
       startedAt: new Date().toISOString(),
     });
@@ -102,25 +102,23 @@ module.exports = function (db, io, services) {
 
   router.post('/orders/:orderId/complete', authenticateToken, asyncHandler(async (req, res) => {
     const { photoProofUrl } = req.body;
-    const order = await db.queryOne(
-      'SELECT id, customer_id, rider_id, status FROM order_state_machine WHERE id = ?',
-      [req.params.orderId]
-    );
+    const order = await prisma.orderStateMachine.findUnique({
+      where: { id: req.params.orderId },
+      select: { id: true, customerId: true, riderId: true, status: true },
+    });
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (req.user.id !== order.rider_id) return res.status(403).json({ error: 'Partner only' });
+    if (req.user.id !== order.riderId) return res.status(403).json({ error: 'Partner only' });
 
     if (!['service_started', 'arrived'].includes(order.status)) {
       return res.status(400).json({ error: `Cannot complete in status: ${order.status}` });
     }
 
-    await db.execute(
-      `UPDATE order_state_machine
-       SET status = 'completed', delivered_at = NOW(), updated_at = NOW()
-       WHERE id = ?`,
-      [req.params.orderId]
-    );
+    await prisma.orderStateMachine.update({
+      where: { id: req.params.orderId },
+      data: { status: 'completed', deliveredAt: new Date(), updatedAt: new Date() },
+    });
 
-    io.to(`user:${order.customer_id}`).emit('service:completed', {
+    io.to(`user:${order.customerId}`).emit('service:completed', {
       orderId: order.id,
       photoProofUrl,
       completedAt: new Date().toISOString(),

@@ -2,36 +2,34 @@ const bus = require('./event-bus');
 const config = require('./config');
 const logger = require('./lib/logger');
 const routing = require('./lib/routing');
-const geo = require('./lib/geo');
 
 class RiderAssignment {
-  constructor(db, io, spatialIndex) {
-    this.db = db;
+  constructor(prisma, io, spatialIndex) {
+    this.prisma = prisma;
     this.io = io;
     this.spatialIndex = spatialIndex;
   }
 
   async findBestRider(darkStoreId) {
-    const darkStore = await this.db.queryOne(
-      'SELECT id, name, lat, lng FROM dark_stores WHERE id = ? AND is_active = 1',
-      [darkStoreId]
-    );
+    const darkStore = await this.prisma.darkStore.findFirst({
+      where: { id: darkStoreId, isActive: 1 },
+      select: { id: true, name: true, lat: true, lng: true },
+    });
     if (!darkStore) throw new Error(`Dark store ${darkStoreId} not found or inactive`);
 
     const radiusMeters = config.rider.searchRadiusKm * 1000;
 
-    const riders = await this.db.query(
-      `SELECT u.id, u.name, u.lat, u.lng, u.rating_avg, u.jobs_completed, u.response_time_mins, u.is_plus_member,
-        ${geo.distanceSphereKmExpr(darkStore.lat, darkStore.lng, 'u.lat', 'u.lng')} as distance_km,
-        (SELECT COUNT(*) FROM rider_tasks rt WHERE rt.rider_id = u.id AND rt.status IN ('pending', 'en_route')) as active_tasks
-       FROM users u
-       WHERE u.role = 'partner'
-         AND u.lat IS NOT NULL AND u.lng IS NOT NULL
-         AND ${geo.dWithinExpr(darkStore.lat, darkStore.lng, 'u.lat', 'u.lng', radiusMeters)}
-       ORDER BY distance_km ASC
-       LIMIT 50`,
-      []
-    );
+    const riders = await this.prisma.$queryRaw`
+      SELECT u.id, u.name, u.lat, u.lng, u.rating_avg, u.jobs_completed, u.response_time_mins, u.is_plus_member,
+             ST_DistanceSphere(ST_MakePoint(u.lng, u.lat), ST_MakePoint(${darkStore.lng}, ${darkStore.lat})) / 1000 as distance_km,
+             (SELECT COUNT(*) FROM rider_tasks rt WHERE rt.rider_id = u.id AND rt.status IN ('pending', 'en_route')) as active_tasks
+      FROM users u
+      WHERE u.role = 'partner'
+        AND u.lat IS NOT NULL AND u.lng IS NOT NULL
+        AND ST_DWithin(ST_MakePoint(u.lng, u.lat)::geography, ST_SetSRID(ST_MakePoint(${darkStore.lng}, ${darkStore.lat}), 4326)::geography, ${radiusMeters})
+      ORDER BY distance_km ASC
+      LIMIT 50
+    `;
 
     const candidates = [];
     for (const rider of riders) {
@@ -75,31 +73,25 @@ class RiderAssignment {
   }
 
   async assignRider(orderId, riderId, darkStoreId) {
-    const order = await this.db.queryOne(
-      'SELECT id, lat, lng, location, service_id FROM order_state_machine WHERE id = ?',
-      [orderId]
-    );
+    const order = await this.prisma.orderStateMachine.findUnique({
+      where: { id: orderId },
+      select: { id: true, lat: true, lng: true, location: true, serviceId: true },
+    });
     if (!order) throw new Error(`Order ${orderId} not found`);
 
-    const existing = await this.db.queryOne(
-      'SELECT * FROM rider_tasks WHERE order_id = ? AND rider_id = ?',
-      [orderId, riderId]
-    );
+    const existing = await this.prisma.riderTask.findFirst({
+      where: { orderId, riderId },
+    });
     if (existing) return existing;
 
-    const result = await this.db.execute(
-      'INSERT INTO rider_tasks (rider_id, order_id, task_type, status) VALUES (?, ?, ?, ?) RETURNING *',
-      [riderId, orderId, 'pickup', 'pending']
-    );
-    const task = result.rows[0] || await this.db.queryOne(
-      'SELECT * FROM rider_tasks WHERE order_id = ? AND rider_id = ?',
-      [orderId, riderId]
-    );
+    const task = await this.prisma.riderTask.create({
+      data: { riderId, orderId, taskType: 'pickup', status: 'pending' },
+    });
 
-    const darkStore = await this.db.queryOne(
-      'SELECT name, lat, lng FROM dark_stores WHERE id = ?',
-      [darkStoreId]
-    );
+    const darkStore = await this.prisma.darkStore.findUnique({
+      where: { id: darkStoreId },
+      select: { name: true, lat: true, lng: true },
+    });
 
     bus.emit('rider:assigned', { orderId, riderId, taskId: task.id, darkStoreId });
 
@@ -121,50 +113,41 @@ class RiderAssignment {
   }
 
   async updateTaskStatus(taskId, status, meta = {}) {
-    const task = await this.db.queryOne('SELECT * FROM rider_tasks WHERE id = ?', [taskId]);
+    const task = await this.prisma.riderTask.findUnique({ where: { id: taskId } });
     if (!task) throw new Error(`Task ${taskId} not found`);
 
-    const updates = ['status = ?'];
-    const params = [status];
-
+    const data = { status };
     if (status === 'completed' || status === 'en_route') {
-      updates.push('completed_at = CURRENT_TIMESTAMP');
+      data.completedAt = new Date();
     }
     if (meta.lat != null && meta.lng != null) {
-      updates.push('lat = ?');
-      params.push(meta.lat);
-      updates.push('lng = ?');
-      params.push(meta.lng);
+      data.lat = meta.lat;
+      data.lng = meta.lng;
     }
 
-    params.push(taskId);
-    await this.db.execute(
-      `UPDATE rider_tasks SET ${updates.join(', ')} WHERE id = ?`,
-      params
-    );
+    await this.prisma.riderTask.update({ where: { id: taskId }, data });
 
-    bus.emit('rider:task_updated', { taskId, orderId: task.order_id, status });
+    bus.emit('rider:task_updated', { taskId, orderId: task.orderId, status });
     logger.info({ taskId, status }, 'Task updated');
 
-    return this.db.queryOne('SELECT * FROM rider_tasks WHERE id = ?', [taskId]);
+    return this.prisma.riderTask.findUnique({ where: { id: taskId } });
   }
 
   async getRiderActiveTasks(riderId) {
-    return this.db.query(
-      `SELECT rt.*, os.service_id, os.location, os.lat, os.lng, os.amount
-       FROM rider_tasks rt
-       JOIN order_state_machine os ON rt.order_id = os.id
-       WHERE rt.rider_id = ? AND rt.status IN ('pending', 'en_route')
-       ORDER BY rt.assigned_at ASC`,
-      [riderId]
-    );
+    return this.prisma.$queryRaw`
+      SELECT rt.*, os.service_id, os.location, os.lat, os.lng, os.amount
+      FROM rider_tasks rt
+      JOIN order_state_machine os ON rt.order_id = os.id
+      WHERE rt.rider_id = ${riderId} AND rt.status IN ('pending', 'en_route')
+      ORDER BY rt.assigned_at ASC
+    `;
   }
 
   async getOrderTimeline(orderId) {
-    return this.db.query(
-      'SELECT * FROM rider_tasks WHERE order_id = ? ORDER BY assigned_at ASC',
-      [orderId]
-    );
+    return this.prisma.riderTask.findMany({
+      where: { orderId },
+      orderBy: { assignedAt: 'asc' },
+    });
   }
 }
 

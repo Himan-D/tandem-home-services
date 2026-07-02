@@ -3,7 +3,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken } = require('../middleware/auth');
 const { validate, createBookingSchema, ratingSchema, complaintSchema } = require('../middleware/validate');
 
-module.exports = function (db, io, services) {
+module.exports = function (prisma, io, services) {
   const router = express.Router();
   const { notifyUser, matchBooking, ml } = services;
 
@@ -12,13 +12,22 @@ module.exports = function (db, io, services) {
 
     let discountPercent = 0;
     if (promoCode) {
-      const promo = await db.queryOne(
-        `SELECT * FROM promo_codes WHERE code = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > NOW())`,
-        [promoCode.toUpperCase()]
-      );
-      if (promo && promo.used_count < promo.max_uses) {
-        discountPercent = promo.discount_percent;
-        await db.execute('UPDATE promo_codes SET used_count = used_count + 1 WHERE id = ?', [promo.id]);
+      const promo = await prisma.promoCode.findFirst({
+        where: {
+          code: promoCode.toUpperCase(),
+          isActive: 1,
+          OR: [
+            { expiresAt: null },
+            { expiresAt: { gt: new Date() } },
+          ],
+        },
+      });
+      if (promo && promo.usedCount < promo.maxUses) {
+        discountPercent = promo.discountPercent;
+        await prisma.promoCode.update({
+          where: { id: promo.id },
+          data: { usedCount: { increment: 1 } },
+        });
       }
     }
 
@@ -26,15 +35,21 @@ module.exports = function (db, io, services) {
     if (discountPercent > 0) finalAmount = finalAmount * (1 - discountPercent / 100);
 
     if (walletDeduction && walletDeduction > 0) {
-      const user = await db.queryOne('SELECT wallet_balance FROM users WHERE id = ?', [req.user.id]);
-      if (!user || user.wallet_balance < walletDeduction) {
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { walletBalance: true },
+      });
+      if (!user || user.walletBalance < walletDeduction) {
         return res.status(400).json({ error: 'Insufficient wallet balance' });
       }
-      await db.execute('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?', [walletDeduction, req.user.id]);
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { walletBalance: { decrement: walletDeduction } },
+      });
     }
 
-    const service = await db.queryOne('SELECT * FROM services WHERE id = ?', [serviceId]);
-    const title = service ? service.title : 'Custom Service';
+    const svc = await prisma.service.findUnique({ where: { id: String(serviceId) } });
+    const title = svc ? svc.title : 'Custom Service';
     const jobId = `JOB-${Math.floor(1000 + Math.random() * 9000)}`;
     const payout = Math.floor(finalAmount * 0.75);
 
@@ -42,16 +57,25 @@ module.exports = function (db, io, services) {
     let status = 'pending';
     if (preferredPartnerId) { partnerId = preferredPartnerId; status = 'accepted'; }
 
-    await db.execute(
-      `INSERT INTO bookings (id, service_id, service_title, customer_id, partner_id, location, lat, lng, time, payout, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [jobId, serviceId, title, req.user.id, partnerId, location, lat || null, lng || null, time, payout, status]
-    );
+    await prisma.booking.create({
+      data: {
+        id: jobId,
+        serviceId,
+        serviceTitle: title,
+        customerId: req.user.id,
+        partnerId,
+        location,
+        lat: lat || null,
+        lng: lng || null,
+        time,
+        payout,
+        status,
+      },
+    });
 
-    await db.execute(
-      'INSERT INTO user_interactions (user_id, service_id, rating) VALUES (?, ?, ?)',
-      [req.user.id, serviceId, 1.0]
-    );
+    await prisma.userInteraction.create({
+      data: { userId: req.user.id, serviceId, rating: 1.0 },
+    });
     await notifyUser(req.user.id, 'in_app', 'Booking Confirmed', `Your booking for ${title} has been received.`);
 
     res.status(201).json({ id: jobId, serviceId, serviceTitle: title, location, time, payout, status, partnerId, discountPercent });
@@ -62,19 +86,26 @@ module.exports = function (db, io, services) {
   }));
 
   router.get('/my', authenticateToken, asyncHandler(async (req, res) => {
-    const myBookings = await db.query(`
-      SELECT b.*, u.name as partner_name
-      FROM bookings b LEFT JOIN users u ON b.partner_id = u.id
-      WHERE b.customer_id = ? ORDER BY b.created_at DESC
-    `, [req.user.id]);
+    const raw = await prisma.booking.findMany({
+      where: { customerId: req.user.id },
+      include: { partner: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const myBookings = raw.map((b) => ({
+      id: b.id, service_id: b.serviceId, service_title: b.serviceTitle,
+      customer_id: b.customerId, partner_id: b.partnerId,
+      location: b.location, lat: b.lat, lng: b.lng,
+      time: b.time, payout: b.payout, status: b.status,
+      rated: b.rated, matched_by: b.matchedBy, match_score: b.matchScore,
+      created_at: b.createdAt, partner_name: b.partner?.name || null,
+    }));
     res.json(myBookings);
   }));
 
   router.post('/:id/cancel', authenticateToken, asyncHandler(async (req, res) => {
-    const booking = await db.queryOne(
-      'SELECT * FROM bookings WHERE id = ? AND customer_id = ?',
-      [req.params.id, req.user.id]
-    );
+    const booking = await prisma.booking.findFirst({
+      where: { id: req.params.id, customerId: req.user.id },
+    });
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
     if (booking.status === 'completed') return res.status(400).json({ error: 'Cannot cancel completed booking' });
     if (booking.status === 'cancelled') return res.status(400).json({ error: 'Already cancelled' });
@@ -83,18 +114,24 @@ module.exports = function (db, io, services) {
     if (booking.status === 'pending') refundPercent = 100;
     else if (booking.status === 'accepted') refundPercent = 75;
 
-    await db.execute('UPDATE bookings SET status = ? WHERE id = ?', ['cancelled', req.params.id]);
+    await prisma.booking.update({
+      where: { id: req.params.id },
+      data: { status: 'cancelled' },
+    });
 
     if (refundPercent > 0) {
       const paidAmount = Math.floor(booking.payout / 0.75);
       const refundValue = Math.floor((paidAmount * refundPercent) / 100);
-      await db.execute('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?', [refundValue, req.user.id]);
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { walletBalance: { increment: refundValue } },
+      });
       await notifyUser(req.user.id, 'both', 'Booking Cancelled', `$${refundValue} refunded to wallet.`);
     }
 
-    if (booking.partner_id) {
-      await notifyUser(booking.partner_id, 'in_app', 'Booking Cancelled', `Booking ${booking.service_title} cancelled.`);
-      io.to(`user:${booking.partner_id}`).emit('booking:cancelled', { id: req.params.id });
+    if (booking.partnerId) {
+      await notifyUser(booking.partnerId, 'in_app', 'Booking Cancelled', `Booking ${booking.serviceTitle} cancelled.`);
+      io.to(`user:${booking.partnerId}`).emit('booking:cancelled', { id: req.params.id });
     }
 
     res.json({ success: true, refundPercent });
@@ -102,41 +139,52 @@ module.exports = function (db, io, services) {
 
   router.post('/:id/rate', authenticateToken, validate(ratingSchema), asyncHandler(async (req, res) => {
     const { bookingId, rating, review } = req.body;
-    const job = await db.queryOne(
-      'SELECT * FROM bookings WHERE id = ? AND customer_id = ?',
-      [bookingId, req.user.id]
-    );
+    const job = await prisma.booking.findFirst({
+      where: { id: bookingId, customerId: req.user.id },
+    });
     if (!job) return res.status(403).json({ error: 'Invalid job' });
 
-    await db.execute(
-      'INSERT INTO ratings (booking_id, customer_id, partner_id, rating, review) VALUES (?, ?, ?, ?, ?)',
-      [bookingId, req.user.id, job.partner_id, rating, review]
-    );
-    await db.execute('UPDATE bookings SET rated = 1 WHERE id = ?', [bookingId]);
-    await db.execute(
-      'INSERT INTO user_interactions (user_id, service_id, rating) VALUES (?, ?, ?)',
-      [req.user.id, job.service_id, rating]
-    );
+    await prisma.rating.create({
+      data: {
+        bookingId,
+        customerId: req.user.id,
+        partnerId: job.partnerId,
+        rating,
+        review,
+      },
+    });
+    await prisma.booking.update({
+      where: { id: bookingId },
+      data: { rated: 1 },
+    });
+    await prisma.userInteraction.create({
+      data: { userId: req.user.id, serviceId: job.serviceId, rating },
+    });
 
-    const avgRating = await db.queryOne(
-      'SELECT AVG(rating) as avg FROM ratings WHERE partner_id = ?',
-      [job.partner_id]
-    );
-    if (avgRating.avg) {
-      await db.execute('UPDATE users SET rating_avg = ? WHERE id = ?', [avgRating.avg, job.partner_id]);
+    const avgResult = await prisma.rating.aggregate({
+      _avg: { rating: true },
+      where: { partnerId: job.partnerId },
+    });
+    if (avgResult._avg.rating) {
+      await prisma.user.update({
+        where: { id: job.partnerId },
+        data: { ratingAvg: avgResult._avg.rating },
+      });
     }
 
-    await notifyUser(job.partner_id, 'both', 'New Rating', `You received a ${rating}-star rating.`);
+    await notifyUser(job.partnerId, 'both', 'New Rating', `You received a ${rating}-star rating.`);
     res.json({ success: true });
   }));
 
   router.post('/:id/complaint', authenticateToken, validate(complaintSchema), asyncHandler(async (req, res) => {
     const { bookingId, reason, description } = req.body;
-    await db.execute(
-      'INSERT INTO complaints (booking_id, customer_id, reason, description) VALUES (?, ?, ?, ?)',
-      [bookingId, req.user.id, reason, description]
-    );
-    const admin = await db.queryOne("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+    await prisma.complaint.create({
+      data: { bookingId, customerId: req.user.id, reason, description },
+    });
+    const admin = await prisma.user.findFirst({
+      where: { role: 'admin' },
+      select: { id: true },
+    });
     if (admin) {
       await notifyUser(admin.id, 'email', 'New Complaint', `Complaint for job ${bookingId}: ${reason}`);
     }

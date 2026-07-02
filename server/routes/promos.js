@@ -18,63 +18,71 @@ const updatePromoSchema = z.object({
   isActive: z.number().int().min(0).max(1).optional(),
 });
 
-module.exports = function (db) {
+module.exports = function (prisma) {
   const router = express.Router();
 
   router.get('/', authenticateToken, requireRole('admin'), asyncHandler(async (req, res) => {
-    const promos = await db.query('SELECT * FROM promo_codes ORDER BY created_at DESC');
+    const promos = await prisma.promoCode.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
     res.json(promos);
   }));
 
   router.post('/', authenticateToken, requireRole('admin'), validate(createPromoSchema), asyncHandler(async (req, res) => {
     const { code, discountPercent, maxUses, expiresAt } = req.body;
     try {
-      const result = await db.execute(
-        'INSERT INTO promo_codes (code, discount_percent, max_uses, expires_at, is_active) VALUES (?, ?, ?, ?, 1) RETURNING *',
-        [code, discountPercent, maxUses, expiresAt || null]
-      );
-      res.status(201).json(result.rows[0]);
+      const promo = await prisma.promoCode.create({
+        data: { code, discountPercent, maxUses, expiresAt: expiresAt ? new Date(expiresAt) : null, isActive: 1 },
+      });
+      res.status(201).json(promo);
     } catch {
       res.status(409).json({ error: 'Promo code already exists' });
     }
   }));
 
   router.put('/:id', authenticateToken, requireRole('admin'), validate(updatePromoSchema), asyncHandler(async (req, res) => {
-    const existing = await db.queryOne('SELECT * FROM promo_codes WHERE id = ?', [req.params.id]);
+    const existing = await prisma.promoCode.findUnique({ where: { id: parseInt(req.params.id) } });
     if (!existing) return res.status(404).json({ error: 'Promo not found' });
 
-    const sets = [];
-    const params = [];
-    if (req.body.discountPercent !== undefined) { sets.push('discount_percent = ?'); params.push(req.body.discountPercent); }
-    if (req.body.maxUses !== undefined) { sets.push('max_uses = ?'); params.push(req.body.maxUses); }
-    if (req.body.expiresAt !== undefined) { sets.push('expires_at = ?'); params.push(req.body.expiresAt); }
-    if (req.body.isActive !== undefined) { sets.push('is_active = ?'); params.push(req.body.isActive); }
-    if (sets.length === 0) return res.json(existing);
+    const data = {};
+    if (req.body.discountPercent !== undefined) data.discountPercent = req.body.discountPercent;
+    if (req.body.maxUses !== undefined) data.maxUses = req.body.maxUses;
+    if (req.body.expiresAt !== undefined) data.expiresAt = new Date(req.body.expiresAt);
+    if (req.body.isActive !== undefined) data.isActive = req.body.isActive;
+    if (Object.keys(data).length === 0) return res.json(existing);
 
-    params.push(req.params.id);
-    const result = await db.execute(
-      `UPDATE promo_codes SET ${sets.join(', ')} WHERE id = ? RETURNING *`,
-      params
-    );
-    res.json(result.rows[0]);
+    const promo = await prisma.promoCode.update({
+      where: { id: parseInt(req.params.id) },
+      data,
+    });
+    res.json(promo);
   }));
 
   router.delete('/:id', authenticateToken, requireRole('admin'), asyncHandler(async (req, res) => {
-    const result = await db.execute('DELETE FROM promo_codes WHERE id = ? RETURNING id', [req.params.id]);
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Promo not found' });
-    res.json({ success: true });
+    try {
+      await prisma.promoCode.delete({ where: { id: parseInt(req.params.id) } });
+      res.json({ success: true });
+    } catch {
+      return res.status(404).json({ error: 'Promo not found' });
+    }
   }));
 
   router.post('/validate', asyncHandler(async (req, res) => {
     const { code } = req.body;
     if (!code) return res.status(400).json({ error: 'Code required' });
-    const promo = await db.queryOne(
-      `SELECT * FROM promo_codes WHERE code = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > NOW())`,
-      [code.toUpperCase()]
-    );
+    const promo = await prisma.promoCode.findFirst({
+      where: {
+        code: code.toUpperCase(),
+        isActive: 1,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ],
+      },
+    });
     if (!promo) return res.status(400).json({ error: 'Invalid or expired promo code' });
-    if (promo.used_count >= promo.max_uses) return res.status(400).json({ error: 'Promo code fully redeemed' });
-    res.json({ valid: true, discountPercent: promo.discount_percent, code: promo.code });
+    if (promo.usedCount >= promo.maxUses) return res.status(400).json({ error: 'Promo code fully redeemed' });
+    res.json({ valid: true, discountPercent: promo.discountPercent, code: promo.code });
   }));
 
   return router;

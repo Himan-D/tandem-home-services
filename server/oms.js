@@ -2,7 +2,6 @@ const crypto = require('crypto');
 const { Queue, Worker } = require('bullmq');
 const config = require('./config');
 const logger = require('./lib/logger');
-const geo = require('./lib/geo');
 const bus = require('./event-bus');
 const { createClient } = require('./lib/redis');
 
@@ -34,8 +33,8 @@ const VALID_TRANSITIONS = {
 };
 
 class OrderManagementSystem {
-  constructor(db, io, redisConnection) {
-    this.db = db;
+  constructor(prisma, io, redisConnection) {
+    this.prisma = prisma;
     this.io = io;
     this.locks = new Map();
     this.riderAssignment = null;
@@ -77,19 +76,19 @@ class OrderManagementSystem {
       'order-processing',
       async (job) => {
         const { orderId } = job.data;
-        const order = await this.db.queryOne(
-          'SELECT id, service_id, lat, lng, status FROM order_state_machine WHERE id = ?',
-          [orderId]
-        );
+        const order = await this.prisma.orderStateMachine.findUnique({
+          where: { id: orderId },
+          select: { id: true, serviceId: true, lat: true, lng: true, status: true },
+        });
         if (!order || order.status !== STATES.PENDING) return { skipped: true };
 
-        const store = await this._findNearestStore(order.service_id, order.lat, order.lng);
+        const store = await this._findNearestStore(order.serviceId, order.lat, order.lng);
         if (!store) {
           await this._transition(orderId, STATES.FAILED, { reason: 'No dark store available' });
           return { status: 'failed', reason: 'No store' };
         }
 
-        const reserved = await this._reserveInventory(orderId, store.id, order.service_id);
+        const reserved = await this._reserveInventory(orderId, store.id, order.serviceId);
         if (!reserved) {
           await this._transition(orderId, STATES.FAILED, { reason: 'Out of stock' });
           return { status: 'failed', reason: 'Out of stock' };
@@ -109,10 +108,10 @@ class OrderManagementSystem {
       'rider-dispatch',
       async (job) => {
         const { orderId, darkStoreId } = job.data;
-        const order = await this.db.queryOne(
-          'SELECT id, status FROM order_state_machine WHERE id = ?',
-          [orderId]
-        );
+        const order = await this.prisma.orderStateMachine.findUnique({
+          where: { id: orderId },
+          select: { id: true, status: true },
+        });
         if (!order || order.status !== STATES.INVENTORY_VALIDATED) return { skipped: true };
 
         if (!this.riderAssignment) {
@@ -139,31 +138,28 @@ class OrderManagementSystem {
 
   async _findNearestStore(serviceId, lat, lng) {
     const radiusMeters = config.darkStore.searchRadiusKm * 1000;
-    return this.db.queryOne(
-      `SELECT ds.id, ds.name, ds.lat, ds.lng,
-         ${geo.distanceSphereKmExpr(lat, lng, 'ds.lat', 'ds.lng')} as distance_km
-       FROM dark_stores ds
-       WHERE ds.is_active = 1
-         AND ${geo.dWithinExpr(lat, lng, 'ds.lat', 'ds.lng', radiusMeters)}
-         AND EXISTS (
-           SELECT 1 FROM inventory i
-           WHERE i.dark_store_id = ds.id AND i.service_id = ? AND i.quantity > 0
-         )
-       ORDER BY distance_km ASC LIMIT 1`,
-      [serviceId]
-    );
+    const stores = await this.prisma.$queryRaw`
+      SELECT ds.id, ds.name, ds.lat, ds.lng,
+             ST_DistanceSphere(ST_MakePoint(ds.lng, ds.lat), ST_MakePoint(${lng}, ${lat})) / 1000 as distance_km
+      FROM dark_stores ds
+      WHERE ds.is_active = 1
+        AND ST_DWithin(ST_MakePoint(ds.lng, ds.lat)::geography, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
+        AND EXISTS (
+          SELECT 1 FROM inventory i
+          WHERE i.dark_store_id = ds.id AND i.service_id = ${serviceId} AND i.quantity > 0
+        )
+      ORDER BY distance_km ASC LIMIT 1
+    `;
+    return stores[0] || null;
   }
 
   async _reserveInventory(orderId, darkStoreId, serviceId) {
-    const result = await this.db.execute(
-      `UPDATE inventory
-       SET quantity = quantity - 1, reserved = reserved + 1, updated_at = NOW()
-       WHERE dark_store_id = ? AND service_id = ? AND quantity > 0
-       RETURNING quantity`,
-      [darkStoreId, serviceId]
-    );
-    if (!result.rows || result.rows.length === 0) return false;
-    return true;
+    const result = await this.prisma.$executeRaw`
+      UPDATE inventory
+      SET quantity = quantity - 1, reserved = reserved + 1, updated_at = NOW()
+      WHERE dark_store_id = ${darkStoreId} AND service_id = ${serviceId} AND quantity > 0
+    `;
+    return result > 0;
   }
 
   generateIdempotencyKey() {
@@ -177,24 +173,29 @@ class OrderManagementSystem {
   async createOrder({ customerId, serviceId, amount, location, lat, lng, idempotencyKey }) {
     const key = idempotencyKey || this.generateIdempotencyKey();
 
-    const existing = await this.db.queryOne(
-      'SELECT * FROM order_state_machine WHERE idempotency_key = ?',
-      [key]
-    );
+    const existing = await this.prisma.orderStateMachine.findUnique({
+      where: { idempotencyKey: key },
+    });
     if (existing) return { order: existing, idempotent: true };
 
     const orderId = this.generateOrderId();
-    await this.db.execute(
-      `INSERT INTO order_state_machine
-        (id, idempotency_key, customer_id, service_id, status, amount, location, lat, lng)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [orderId, key, customerId, serviceId, STATES.PENDING, amount, location, lat, lng]
-    );
+    await this.prisma.orderStateMachine.create({
+      data: {
+        id: orderId,
+        idempotencyKey: key,
+        customerId,
+        serviceId,
+        status: STATES.PENDING,
+        amount,
+        location,
+        lat,
+        lng,
+      },
+    });
 
-    const order = await this.db.queryOne(
-      'SELECT * FROM order_state_machine WHERE id = ?',
-      [orderId]
-    );
+    const order = await this.prisma.orderStateMachine.findUnique({
+      where: { id: orderId },
+    });
 
     if (this.orderQueue) {
       await this.orderQueue.add('inventory-check', { orderId }, { deduplication: { id: key } });
@@ -220,40 +221,35 @@ class OrderManagementSystem {
     this.locks.set(orderId, true);
 
     try {
-      const order = await this.db.queryOne(
-        'SELECT * FROM order_state_machine WHERE id = ?',
-        [orderId]
-      );
+      const order = await this.prisma.orderStateMachine.findUnique({
+        where: { id: orderId },
+      });
       if (!order) throw new Error(`Order ${orderId} not found`);
       if (!VALID_TRANSITIONS[order.status]?.includes(newState)) {
         throw new Error(`Invalid transition: ${order.status} -> ${newState}`);
       }
 
-      const sets = ['status = ?', 'updated_at = NOW()'];
-      const params = [newState];
+      const data = { status: newState, updatedAt: new Date() };
 
       if (newState === STATES.RIDER_ASSIGNED && meta.riderId) {
-        sets.push('rider_id = ?');
-        params.push(meta.riderId);
-        sets.push('assigned_at = NOW()');
+        data.riderId = meta.riderId;
+        data.assignedAt = new Date();
       }
       if (newState === STATES.INVENTORY_VALIDATED && meta.darkStoreId) {
-        sets.push('dark_store_id = ?');
-        params.push(meta.darkStoreId);
+        data.darkStoreId = meta.darkStoreId;
       }
-      if (newState === STATES.PICKED_UP) sets.push('picked_up_at = NOW()');
-      if (newState === STATES.DELIVERED) sets.push('delivered_at = NOW()');
+      if (newState === STATES.PICKED_UP) data.pickedUpAt = new Date();
+      if (newState === STATES.DELIVERED) data.deliveredAt = new Date();
 
-      params.push(orderId);
-      await this.db.execute(
-        `UPDATE order_state_machine SET ${sets.join(', ')} WHERE id = ?`,
-        params
-      );
+      const result = await this.prisma.orderStateMachine.updateMany({
+        where: { id: orderId, status: order.status },
+        data,
+      });
+      if (result.count === 0) throw new Error(`Concurrent modification: order ${orderId} status changed`);
 
-      const updated = await this.db.queryOne(
-        'SELECT * FROM order_state_machine WHERE id = ?',
-        [orderId]
-      );
+      const updated = await this.prisma.orderStateMachine.findUnique({
+        where: { id: orderId },
+      });
 
       if (
         newState === STATES.INVENTORY_VALIDATED &&
@@ -273,14 +269,14 @@ class OrderManagementSystem {
 
   _emitOrderUpdate(order) {
     if (!this.io) return;
-    this.io.to(`user:${order.customer_id}`).emit('order:updated', {
+    this.io.to(`user:${order.customerId}`).emit('order:updated', {
       id: order.id,
       status: order.status,
-      riderId: order.rider_id,
-      storeId: order.dark_store_id,
+      riderId: order.riderId,
+      storeId: order.darkStoreId,
     });
-    if (order.rider_id) {
-      this.io.to(`user:${order.rider_id}`).emit('order:status', {
+    if (order.riderId) {
+      this.io.to(`user:${order.riderId}`).emit('order:status', {
         id: order.id,
         status: order.status,
       });
@@ -293,20 +289,18 @@ class OrderManagementSystem {
   async complete(orderId) { return this._transition(orderId, STATES.COMPLETED); }
 
   async cancel(orderId) {
-    const order = await this.db.queryOne(
-      'SELECT * FROM order_state_machine WHERE id = ?',
-      [orderId]
-    );
+    const order = await this.prisma.orderStateMachine.findUnique({
+      where: { id: orderId },
+    });
     if (!order) throw new Error('Order not found');
     await this._transition(orderId, STATES.CANCELLED);
 
-    if (order.dark_store_id && order.status === STATES.INVENTORY_VALIDATED) {
-      await this.db.execute(
-        `UPDATE inventory
-         SET quantity = quantity + 1, reserved = GREATEST(reserved - 1, 0), updated_at = NOW()
-         WHERE dark_store_id = ? AND service_id = ?`,
-        [order.dark_store_id, order.service_id]
-      );
+    if (order.darkStoreId && order.status === STATES.INVENTORY_VALIDATED) {
+      await this.prisma.$executeRaw`
+        UPDATE inventory
+        SET quantity = quantity + 1, reserved = GREATEST(reserved - 1, 0), updated_at = NOW()
+        WHERE dark_store_id = ${order.darkStoreId} AND service_id = ${order.serviceId}
+      `;
     }
   }
 
@@ -319,39 +313,37 @@ class OrderManagementSystem {
   }
 
   getOrder(orderId) {
-    return this.db.queryOne('SELECT * FROM order_state_machine WHERE id = ?', [orderId]);
+    return this.prisma.orderStateMachine.findUnique({ where: { id: orderId } });
   }
 
   getOrdersForCustomer(customerId) {
-    return this.db.query(
-      'SELECT * FROM order_state_machine WHERE customer_id = ? ORDER BY created_at DESC',
-      [customerId]
-    );
+    return this.prisma.orderStateMachine.findMany({
+      where: { customerId },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   getOrdersForRider(riderId) {
-    return this.db.query(
-      `SELECT * FROM order_state_machine
-       WHERE rider_id = ? AND status NOT IN ('completed', 'cancelled')
-       ORDER BY created_at DESC`,
-      [riderId]
-    );
+    return this.prisma.orderStateMachine.findMany({
+      where: { riderId, status: { notIn: ['completed', 'cancelled'] } },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   getActiveJobs() {
-    return this.db.query(
-      `SELECT * FROM order_state_machine
-       WHERE status NOT IN ('completed', 'cancelled', 'failed')
-       ORDER BY created_at DESC LIMIT 50`
-    );
+    return this.prisma.orderStateMachine.findMany({
+      where: { status: { notIn: ['completed', 'cancelled', 'failed'] } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
   }
 
   async getStuckOrders(minutesOld = 30) {
-    return this.db.query(
-      `SELECT * FROM order_state_machine
-       WHERE status = 'pending' AND created_at < NOW() - INTERVAL '${parseInt(minutesOld)} minutes'
-       ORDER BY created_at ASC`
-    );
+    const someDate = new Date(Date.now() - minutesOld * 60 * 1000);
+    return this.prisma.orderStateMachine.findMany({
+      where: { status: 'pending', createdAt: { lt: someDate } },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 }
 

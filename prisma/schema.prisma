@@ -1,0 +1,335 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               Int      @id @default(autoincrement())
+  name             String?
+  email            String?  @unique
+  password         String?
+  role             String?
+  walletBalance    Float    @default(0)        @map("wallet_balance")
+  isPlusMember     Int      @default(0)        @map("is_plus_member")
+  servicesOffered  String?                      @map("services_offered")
+  phone            String?
+  location         String?
+  lat              Float?
+  lng              Float?
+  geom             Unsupported("geometry(Point,4326)")
+  ratingAvg        Float    @default(4.5)      @map("rating_avg")
+  jobsCompleted    Int      @default(0)        @map("jobs_completed")
+  responseTimeMins Float    @default(30)       @map("response_time_mins")
+  createdAt        DateTime @default(now())    @map("created_at")
+
+  bookingsAsCustomer Booking[] @relation("booking_customer")
+  bookingsAsPartner  Booking[] @relation("booking_partner")
+  notifications     Notification[]
+  ratingsGiven      Rating[]          @relation("customer_ratings")
+  ratingsReceived   Rating[]          @relation("partner_ratings")
+  complaints        Complaint[]
+  chatMessages      ChatMessage[]
+  authTokens        AuthToken[]
+  declinedBookings  DeclinedBooking[]
+  interactions      UserInteraction[]
+  proAvailability   ProAvailability?
+  locationHistory   LocationHistory[]
+  refreshTokens     RefreshToken[]
+  partnerShifts     PartnerShift[]
+  ordersAsCustomer OrderStateMachine[] @relation("order_customer")
+  ordersAsRider    OrderStateMachine[] @relation("order_rider")
+  riderTasks        RiderTask[]
+
+  @@map("users")
+}
+
+model Service {
+  id        String   @id
+  title     String?
+  basePrice Float?   @map("base_price")
+  category  String?
+  isActive  Int      @default(1) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  bookings    Booking[]
+  inventory   Inventory[]
+  interactions UserInteraction[]
+
+  @@map("services")
+}
+
+model Booking {
+  id           String   @id
+  serviceId    String?  @map("service_id")
+  serviceTitle String?  @map("service_title")
+  customerId   Int?     @map("customer_id")
+  partnerId    Int?     @map("partner_id")
+  location     String?
+  lat          Float?
+  lng          Float?
+  time         String?
+  payout       Int?
+  status       String?
+  rated        Int      @default(0)
+  matchedBy    String?  @map("matched_by")
+  matchScore   Float?   @map("match_score")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  customer        User?              @relation("booking_customer", fields: [customerId], references: [id])
+  partner         User?              @relation("booking_partner", fields: [partnerId], references: [id])
+  service         Service?           @relation(fields: [serviceId], references: [id])
+  declinedBy      DeclinedBooking[]
+
+  @@map("bookings")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  title     String?
+  message   String?
+  type      String?
+  read      Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model Rating {
+  id         Int      @id @default(autoincrement())
+  bookingId  String?  @map("booking_id")
+  customerId Int?     @map("customer_id")
+  partnerId  Int?     @map("partner_id")
+  rating     Int?
+  review     String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer User? @relation("customer_ratings", fields: [customerId], references: [id])
+  partner  User? @relation("partner_ratings", fields: [partnerId], references: [id])
+
+  @@map("ratings")
+}
+
+model Complaint {
+  id          Int      @id @default(autoincrement())
+  bookingId   String?  @map("booking_id")
+  customerId  Int?     @map("customer_id")
+  reason      String?
+  description String?
+  status      String   @default("open")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  customer User? @relation(fields: [customerId], references: [id])
+
+  @@map("complaints")
+}
+
+model ChatMessage {
+  id        Int      @id @default(autoincrement())
+  bookingId String?  @map("booking_id")
+  senderId  Int?     @map("sender_id")
+  message   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  sender User? @relation(fields: [senderId], references: [id])
+
+  @@map("chat_messages")
+}
+
+model AuthToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  token     String?
+  type      String?
+  expiresAt DateTime? @map("expires_at")
+  used      Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("auth_tokens")
+}
+
+model DeclinedBooking {
+  bookingId String @map("booking_id")
+  partnerId Int    @map("partner_id")
+
+  booking Booking? @relation(fields: [bookingId], references: [id])
+  partner User?    @relation(fields: [partnerId], references: [id])
+
+  @@id([bookingId, partnerId])
+  @@map("declined_bookings")
+}
+
+model UserInteraction {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  serviceId String?  @map("service_id")
+  rating    Float?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User?    @relation(fields: [userId], references: [id])
+  service Service? @relation(fields: [serviceId], references: [id])
+
+  @@map("user_interactions")
+}
+
+model ProAvailability {
+  partnerId   Int      @id @map("partner_id")
+  isAvailable Int      @default(1) @map("is_available")
+  lat         Float?
+  lng         Float?
+  geom        Unsupported("geometry(Point,4326)")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  partner User? @relation(fields: [partnerId], references: [id])
+
+  @@map("pro_availability")
+}
+
+model PromoCode {
+  id              Int      @id @default(autoincrement())
+  code            String?  @unique
+  discountPercent Int      @default(10) @map("discount_percent")
+  maxUses         Int      @default(100) @map("max_uses")
+  usedCount       Int      @default(0) @map("used_count")
+  expiresAt       DateTime? @map("expires_at")
+  isActive        Int      @default(1) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("promo_codes")
+}
+
+model LocationHistory {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  lat       Float
+  lng       Float
+  geom      Unsupported("geometry(Point,4326)")
+  source    String   @default("gps")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("location_history")
+}
+
+model DarkStore {
+  id        Int      @id @default(autoincrement())
+  name      String
+  location  String?
+  lat       Float
+  lng       Float
+  geom      Unsupported("geometry(Point,4326)")
+  isActive  Int      @default(1) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  inventory Inventory[]
+
+  @@map("dark_stores")
+}
+
+model Inventory {
+  id           Int      @id @default(autoincrement())
+  darkStoreId  Int      @map("dark_store_id")
+  serviceId    String   @map("service_id")
+  quantity     Int      @default(0)
+  reserved     Int      @default(0)
+  minThreshold Int      @default(5) @map("min_threshold")
+  updatedAt    DateTime @default(now()) @map("updated_at")
+
+  darkStore DarkStore @relation(fields: [darkStoreId], references: [id])
+  service   Service   @relation(fields: [serviceId], references: [id])
+
+  @@unique([darkStoreId, serviceId])
+  @@map("inventory")
+}
+
+model OrderStateMachine {
+  id              String    @id
+  idempotencyKey  String    @unique @map("idempotency_key")
+  customerId      Int       @map("customer_id")
+  serviceId       String    @map("service_id")
+  darkStoreId     Int?      @map("dark_store_id")
+  riderId         Int?      @map("rider_id")
+  status          String    @default("pending")
+  amount          Float
+  location        String?
+  lat             Float?
+  lng             Float?
+  assignedAt      DateTime? @map("assigned_at")
+  pickedUpAt      DateTime? @map("picked_up_at")
+  deliveredAt     DateTime? @map("delivered_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @map("updated_at")
+
+  customer User? @relation("order_customer", fields: [customerId], references: [id])
+  rider    User? @relation("order_rider", fields: [riderId], references: [id])
+
+  @@map("order_state_machine")
+}
+
+model RiderTask {
+  id          Int       @id @default(autoincrement())
+  riderId     Int       @map("rider_id")
+  orderId     String    @map("order_id")
+  taskType    String    @map("task_type")
+  status      String    @default("pending")
+  lat         Float?
+  lng         Float?
+  assignedAt  DateTime  @default(now()) @map("assigned_at")
+  completedAt DateTime? @map("completed_at")
+
+  rider User? @relation(fields: [riderId], references: [id])
+
+  @@map("rider_tasks")
+}
+
+model RefreshToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  tokenHash String    @map("token_hash")
+  family    String
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+model PartnerShift {
+  id        Int      @id @default(autoincrement())
+  partnerId Int      @map("partner_id")
+  dayOfWeek Int      @map("day_of_week")
+  startTime String   @map("start_time")
+  endTime   String   @map("end_time")
+  breakStart String? @map("break_start")
+  breakEnd  String?  @map("break_end")
+  isActive  Int      @default(1) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  partner User? @relation(fields: [partnerId], references: [id])
+
+  @@index([partnerId, dayOfWeek])
+  @@map("partner_shifts")
+}
+
+model ServiceArea {
+  id        Int      @id @default(autoincrement())
+  name      String
+  boundary  Unsupported("geometry(Polygon,4326)")
+  priceZone Float    @default(1.0) @map("price_zone")
+  isActive  Int      @default(1) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("service_areas")
+}

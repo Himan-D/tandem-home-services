@@ -3,22 +3,27 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken } = require('../middleware/auth');
 const logger = require('../lib/logger');
 
-module.exports = function (db, io, services) {
+module.exports = function (prisma, io, services) {
   const router = express.Router();
   const { ml } = services;
 
   router.get('/', authenticateToken, asyncHandler(async (req, res) => {
     try {
-      const interactions = await db.query('SELECT user_id, service_id, rating FROM user_interactions');
-      const serviceIds = await db.query('SELECT id FROM services WHERE is_active = 1');
-      const allIds = serviceIds.map((s) => s.id);
+      const interactions = await prisma.userInteraction.findMany({
+        select: { userId: true, serviceId: true, rating: true },
+      });
+      const activeServices = await prisma.service.findMany({
+        where: { isActive: 1 },
+        select: { id: true },
+      });
+      const allIds = activeServices.map((s) => s.id);
 
       if (interactions.length > 0) {
         await ml.train(interactions);
       }
 
       const recs = await ml.recommend(req.user.id, 6, allIds);
-      const servicesData = await db.query('SELECT * FROM services WHERE is_active = 1');
+      const servicesData = await prisma.service.findMany({ where: { isActive: 1 } });
       const enriched = recs
         .map((r) => {
           const svc = servicesData.find((s) => s.id === r.service_id);
@@ -29,7 +34,10 @@ module.exports = function (db, io, services) {
       res.json(enriched.length > 0 ? enriched : servicesData.slice(0, 6));
     } catch (err) {
       logger.warn({ err: err.message }, 'Recommendation service unavailable');
-      const fallback = await db.query('SELECT * FROM services WHERE is_active = 1 LIMIT 6');
+      const fallback = await prisma.service.findMany({
+        where: { isActive: 1 },
+        take: 6,
+      });
       res.json(fallback);
     }
   }));

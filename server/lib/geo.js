@@ -18,6 +18,14 @@ function dWithinExpr(lat, lng, colLat = 'lat', colLng = 'lng', meters) {
   return `ST_DWithin(ST_MakePoint(${colLng}, ${colLat})::geography, ST_MakePoint(${parseFloat(lng)}, ${parseFloat(lat)})::geography, ${parseInt(meters)})`;
 }
 
+function makePolygon(wktPlaceholder) {
+  return `ST_SetSRID(ST_GeomFromText(${wktPlaceholder}), 4326)`;
+}
+
+function containsPolygonPoint(polyCol, lat, lng) {
+  return `ST_Contains(${polyCol}, ST_SetSRID(ST_MakePoint(${parseFloat(lng)}, ${parseFloat(lat)}), 4326))`;
+}
+
 const geomTriggerSQL = `
   CREATE OR REPLACE FUNCTION update_geom_from_latlng()
   RETURNS TRIGGER AS $$

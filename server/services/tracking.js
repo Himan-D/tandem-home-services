@@ -12,8 +12,8 @@ const geofence = new GeofenceEngine();
 const otpStore = new Map();
 
 class TrackingService {
-  constructor(db, io) {
-    this.db = db;
+  constructor(prisma, io) {
+    this.prisma = prisma;
     this.io = io;
     this.snapTimers = new Map();
 
@@ -102,11 +102,10 @@ class TrackingService {
       },
       onArrived: async ({ entityId }) => {
         logger.info({ entityId }, 'Partner arrived (dwell confirmed)');
-        await this.db.execute(
-          `UPDATE order_state_machine SET status = 'arrived', updated_at = NOW()
-           WHERE id = ? AND status IN ('rider_assigned', 'picked_up')`,
-          [order.id]
-        );
+        await this.prisma.orderStateMachine.updateMany({
+          where: { id: order.id, status: { in: ['rider_assigned', 'picked_up'] } },
+          data: { status: 'arrived', updatedAt: new Date() },
+        });
         this.io.to(`user:${order.customer_id}`).emit('partner:arrived', {
           orderId: order.id,
         });
@@ -127,28 +126,29 @@ class TrackingService {
   }
 
   async _getActiveOrdersForRider(riderId) {
-    return this.db.query(
-      `SELECT id, customer_id, rider_id, lat, lng, status
-       FROM order_state_machine
-       WHERE rider_id = ? AND status IN ('rider_assigned', 'picked_up', 'in_transit')
-       AND lat IS NOT NULL AND lng IS NOT NULL`,
-      [riderId]
-    );
+    return this.prisma.orderStateMachine.findMany({
+      where: {
+        riderId,
+        status: { in: ['rider_assigned', 'picked_up', 'in_transit'] },
+        lat: { not: null },
+        lng: { not: null },
+      },
+      select: { id: true, customerId: true, riderId: true, lat: true, lng: true, status: true },
+    });
   }
 
   async getETA(orderId) {
-    const order = await this.db.queryOne(
-      `SELECT os.id, os.lat, os.lng, os.status, os.rider_id,
-              ds.lat as store_lat, ds.lng as store_lng
-       FROM order_state_machine os
-       LEFT JOIN dark_stores ds ON os.dark_store_id = ds.id
-       WHERE os.id = ?`,
-      [orderId]
-    );
+    const order = await this.prisma.orderStateMachine.findUnique({
+      where: { id: orderId },
+      select: { id: true, lat: true, lng: true, status: true, riderId: true, customerId: true },
+    });
     if (!order) throw new Error('Order not found');
 
-    const rider = order.rider_id
-      ? await this.db.queryOne('SELECT lat, lng FROM users WHERE id = ?', [order.rider_id])
+    const rider = order.riderId
+      ? await this.prisma.user.findUnique({
+          where: { id: order.riderId },
+          select: { lat: true, lng: true },
+        })
       : null;
 
     if (!rider || !rider.lat || !rider.lng) {
@@ -160,7 +160,7 @@ class TrackingService {
       { lat: order.lat, lng: order.lng }
     );
 
-    this.io.to(`user:${order.customer_id || 0}`).emit('eta:update', {
+    this.io.to(`user:${order.customerId || 0}`).emit('eta:update', {
       orderId: order.id,
       ...eta,
       timestamp: Date.now(),
@@ -212,12 +212,12 @@ class TrackingService {
   }
 
   async confirmArrivalManual(orderId, riderId, lat, lng) {
-    const order = await this.db.queryOne(
-      'SELECT id, customer_id, lat, lng, rider_id, status FROM order_state_machine WHERE id = ?',
-      [orderId]
-    );
+    const order = await this.prisma.orderStateMachine.findUnique({
+      where: { id: orderId },
+      select: { id: true, customerId: true, lat: true, lng: true, riderId: true, status: true },
+    });
     if (!order) throw new Error('Order not found');
-    if (order.rider_id !== riderId) throw new Error('Not authorized');
+    if (order.riderId !== riderId) throw new Error('Not authorized');
     if (!['rider_assigned', 'picked_up'].includes(order.status)) {
       throw new Error(`Cannot confirm arrival in status: ${order.status}`);
     }
@@ -235,12 +235,12 @@ class TrackingService {
 
     geofence.forceArrived(fenceId);
 
-    await this.db.execute(
-      `UPDATE order_state_machine SET status = 'arrived', updated_at = NOW() WHERE id = ?`,
-      [orderId]
-    );
+    await this.prisma.orderStateMachine.update({
+      where: { id: orderId },
+      data: { status: 'arrived', updatedAt: new Date() },
+    });
 
-    this.io.to(`user:${order.customer_id}`).emit('partner:arrived', {
+    this.io.to(`user:${order.customerId}`).emit('partner:arrived', {
       orderId,
       manual: true,
     });
