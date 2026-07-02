@@ -41,8 +41,12 @@ class RecommendationClient {
     return this.request('POST', '/train', { interactions });
   }
 
-  async recommend(userId, topK = 6) {
-    const result = await this.request('POST', '/recommend', { user_id: userId, top_k: topK });
+  async recommend(userId, topK = 6, allServiceIds = null) {
+    const result = await this.request('POST', '/recommend', {
+      user_id: userId,
+      top_k: topK,
+      all_service_ids: allServiceIds,
+    });
     return result?.recommendations || [];
   }
 

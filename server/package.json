@@ -14,13 +14,25 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@googlemaps/google-maps-services-js": "^3.4.0",
+    "@socket.io/redis-adapter": "^8.3.0",
     "bcrypt": "^6.0.0",
+    "bullmq": "^5.79.2",
     "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
     "express": "^5.2.1",
+    "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.3",
+    "node-cron": "^3.0.3",
     "nodemon": "^3.1.14",
+    "pg": "^8.22.0",
+    "pino": "^9.3.2",
+    "pino-pretty": "^11.2.2",
+    "rate-limiter-flexible": "^5.0.3",
+    "rbush": "^4.0.1",
     "socket.io": "^4.8.1",
     "sqlite": "^5.1.1",
-    "sqlite3": "^6.0.1"
+    "sqlite3": "^6.0.1",
+    "zod": "^3.23.8"
   }
 }
