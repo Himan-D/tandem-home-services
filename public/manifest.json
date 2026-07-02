@@ -1,0 +1,15 @@
+{
+  "short_name": "Tandem",
+  "name": "Tandem Home Services",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#05ac5f",
+  "background_color": "#ffffff"
+}
