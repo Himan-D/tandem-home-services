@@ -51,12 +51,16 @@ export function SocketProvider({ children }) {
       setConnected(true);
       attachListeners(socket);
     });
-    socket.on('disconnect', () => setConnected(false));
+    socket.on('disconnect', () => {
+      setConnected(false);
+      detachListeners(socket);
+    });
     socket.on('connect_error', (err) => console.error('Socket error:', err.message));
 
     socketRef.current = socket;
 
     return () => {
+      detachListeners(socket);
       socket.disconnect();
       socketRef.current = null;
       setConnected(false);

@@ -23,6 +23,15 @@ export default function LiveTracking() {
   useEffect(() => {
     if (!token) return;
     joinBooking(jobId);
+    fetch(`${API_BASE}/api/my-bookings`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        const found = data.find(j => j.id.toString() === jobId);
+        if (found) setBooking(found);
+      })
+      .catch(() => {});
   }, [jobId, token]);
 
   useEffect(() => {
