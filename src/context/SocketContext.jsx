@@ -15,9 +15,26 @@ export function SocketProvider({ children }) {
   const socketRef = useRef(null);
   const listenersRef = useRef(new Map());
 
+  const detachListeners = (socket) => {
+    for (const [event, handlers] of listenersRef.current) {
+      for (const handler of handlers) {
+        socket.off(event, handler);
+      }
+    }
+  };
+
+  const attachListeners = (socket) => {
+    for (const [event, handlers] of listenersRef.current) {
+      for (const handler of handlers) {
+        socket.on(event, handler);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!token || !user) {
       if (socketRef.current) {
+        detachListeners(socketRef.current);
         socketRef.current.disconnect();
         socketRef.current = null;
         setConnected(false);
@@ -30,7 +47,10 @@ export function SocketProvider({ children }) {
       transports: ['websocket', 'polling'],
     });
 
-    socket.on('connect', () => setConnected(true));
+    socket.on('connect', () => {
+      setConnected(true);
+      attachListeners(socket);
+    });
     socket.on('disconnect', () => setConnected(false));
     socket.on('connect_error', (err) => console.error('Socket error:', err.message));
 
@@ -48,7 +68,7 @@ export function SocketProvider({ children }) {
       listenersRef.current.set(event, new Set());
     }
     listenersRef.current.get(event).add(handler);
-    if (socketRef.current) {
+    if (socketRef.current?.connected) {
       socketRef.current.on(event, handler);
     }
     return () => {

@@ -1,14 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CheckCircle2, ShieldCheck, Star, MapPin, Clock } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { API_BASE } from '../config';
 
 export default function BookingStatus() {
   const { jobId } = useParams();
   const navigate = useNavigate();
-  const { token } = useAuth();
   const { on, joinBooking } = useSocket();
   const [matchingStatus, setMatchingStatus] = useState('finding');
   const [matchedPro, setMatchedPro] = useState(null);
@@ -29,25 +26,6 @@ export default function BookingStatus() {
     });
     return () => unsub();
   }, [jobId, on]);
-
-  useEffect(() => {
-    if (!token) return;
-    const poll = setInterval(() => {
-      fetch(`${API_BASE}/api/my-bookings`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-        .then(res => res.json())
-        .then(data => {
-          const booking = data.find(j => j.id === jobId);
-          if (booking && (booking.status === 'accepted' || booking.status === 'completed') && !matchedPro) {
-            setMatchedPro({ name: booking.partnerName || 'Tandem Pro', rating: 4.9, jobs: 184 });
-            setMatchingStatus('matched');
-          }
-        })
-        .catch(() => {});
-    }, 3000);
-    return () => clearInterval(poll);
-  }, [token, jobId, matchedPro]);
 
   useEffect(() => {
     if (matchingStatus !== 'finding') return;

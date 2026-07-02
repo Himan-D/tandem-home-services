@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MapPin, Phone, ShieldCheck, ChevronLeft, ChevronRight, MessageSquare, ShieldAlert, X, CheckCircle2, Star } from 'lucide-react';
+import { MapPin, Phone, ShieldCheck, ChevronLeft, ChevronRight, MessageSquare, ShieldAlert, X, CheckCircle2, Star, Navigation } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { API_BASE } from '../config';
@@ -23,19 +23,6 @@ export default function LiveTracking() {
   useEffect(() => {
     if (!token) return;
     joinBooking(jobId);
-
-    const poll = setInterval(() => {
-      fetch(`${API_BASE}/api/my-bookings`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-        .then(res => res.json())
-        .then(data => {
-          const found = data.find(j => j.id.toString() === jobId);
-          if (found) setBooking(found);
-        })
-        .catch(console.error);
-    }, 5000);
-    return () => clearInterval(poll);
   }, [jobId, token]);
 
   useEffect(() => {
