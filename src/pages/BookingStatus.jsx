@@ -14,6 +14,7 @@ export default function BookingStatus() {
   const [matchedPro, setMatchedPro] = useState(null);
   const [redirectCountdown, setRedirectCountdown] = useState(4);
   const [elapsed, setElapsed] = useState(0);
+  const [matchScore, setMatchScore] = useState(null);
 
   useEffect(() => {
     if (!token) return;
@@ -26,6 +27,7 @@ export default function BookingStatus() {
         const booking = data.find(j => j.id === jobId);
         if (booking && (booking.status === 'accepted' || booking.status === 'completed')) {
           setMatchedPro({ name: booking.partnerName || 'Tandem Pro', rating: 4.9, jobs: 184 });
+          if (booking.match_score) setMatchScore(booking.match_score);
           setMatchingStatus('matched');
         }
       })
@@ -37,6 +39,7 @@ export default function BookingStatus() {
       if (data.id !== jobId) return;
       if (data.status === 'accepted') {
         setMatchedPro({ name: data.partnerName || 'Tandem Pro', rating: 4.9, jobs: 184 });
+        if (data.matchScore) setMatchScore(data.matchScore);
         setMatchingStatus('matched');
       }
     });
@@ -228,11 +231,10 @@ export default function BookingStatus() {
                 flex: 1, padding: '0.75rem', background: 'rgba(255,255,255,0.06)',
                 borderRadius: '10px', textAlign: 'center'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem', marginBottom: '0.25rem' }}>
-                  <MapPin size={14} />
-                  <span style={{ fontWeight: 700 }}>~12</span>
+                <div style={{ fontWeight: 700, marginBottom: '0.25rem', color: '#22c55e' }}>
+                  {matchScore != null ? `${(matchScore * 100).toFixed(0)}%` : 'ML'}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>Min away</div>
+                <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>ML Match Score</div>
               </div>
             </div>
           </div>

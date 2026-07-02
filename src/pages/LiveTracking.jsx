@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { API_BASE } from '../config';
 import ChatBox from '../components/ChatBox';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 export default function LiveTracking() {
   const { jobId } = useParams();
@@ -19,6 +21,10 @@ export default function LiveTracking() {
   const [callDuration, setCallDuration] = useState(0);
   const [callConnected, setCallConnected] = useState(false);
   const [partnerLocation, setPartnerLocation] = useState(null);
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const partnerMarkerRef = useRef(null);
+  const bookingRef = useRef(null);
 
   useEffect(() => {
     if (!token) return;
@@ -34,6 +40,60 @@ export default function LiveTracking() {
       .catch(() => {});
   }, [jobId, token]);
 
+  useEffect(() => { bookingRef.current = booking; }, [booking]);
+
+  useEffect(() => {
+    if (!booking?.lat || !booking?.lng || mapInstanceRef.current) return;
+    const map = L.map(mapRef.current, {
+      zoomControl: true,
+      attributionControl: false,
+    }).setView([booking.lat, booking.lng], 14);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+    }).addTo(map);
+
+    const destIcon = L.divIcon({
+      html: `<div style="width:32px;height:32px;background:#6366f1;border:3px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,0.3);">📍</div>`,
+      className: '',
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+    });
+    L.marker([booking.lat, booking.lng], { icon: destIcon })
+      .addTo(map)
+      .bindPopup(`<b>Destination</b><br>${booking.location || ''}`);
+
+    mapInstanceRef.current = map;
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+      partnerMarkerRef.current = null;
+    };
+  }, [booking?.lat, booking?.lng]);
+
+  useEffect(() => {
+    if (!mapInstanceRef.current || !partnerLocation || !bookingRef.current) return;
+    const latlng = [partnerLocation.lat, partnerLocation.lng];
+    if (!partnerMarkerRef.current) {
+      const partnerIcon = L.divIcon({
+        html: `<div style="width:36px;height:36px;background:#22c55e;border:3px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 8px rgba(0,0,0,0.3);">👷</div>`,
+        className: '',
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+      });
+      partnerMarkerRef.current = L.marker(latlng, { icon: partnerIcon })
+        .addTo(mapInstanceRef.current)
+        .bindPopup(`<b>${bookingRef.current.partnerName || 'Partner'}</b><br>En route`);
+    } else {
+      partnerMarkerRef.current.setLatLng(latlng);
+    }
+    const bounds = L.latLngBounds([
+      [bookingRef.current.lat, bookingRef.current.lng],
+      latlng,
+    ]);
+    mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+  }, [partnerLocation]);
+
   useEffect(() => {
     const unsub1 = on('booking:updated', (data) => {
       if (data.id !== jobId) return;
@@ -41,7 +101,7 @@ export default function LiveTracking() {
     });
 
     const unsub2 = on('partner:location', (data) => {
-      if (data.jobId === jobId) {
+      if (data.partnerId === bookingRef.current?.partnerId) {
         setPartnerLocation(data);
       }
     });
@@ -130,23 +190,18 @@ export default function LiveTracking() {
         </div>
       </div>
 
-      <div style={{ flex: 1, background: '#e5e7eb', position: 'relative' }}>
-        <iframe 
-          title="Tracking Map"
-          width="100%" height="100%" frameBorder="0" 
-          src={`https://maps.google.com/maps?q=${encodeURIComponent(booking.location)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
-          style={{ filter: 'contrast(1.1) saturate(1.2)' }}
-        />
-        {partnerLocation && (
-          <div style={{
-            position: 'absolute', bottom: '1rem', left: '1rem', background: 'white',
-            padding: '0.5rem 1rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-            fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem'
-          }}>
-            <Navigation size={14} color="var(--primary)" />
-            Pro location updated {Math.floor((Date.now() - (partnerLocation.timestamp || Date.now())) / 1000)}s ago
-          </div>
-        )}
+      <div style={{ flex: 1, position: 'relative' }}>
+        <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+        <div style={{
+          position: 'absolute', bottom: '1rem', left: '1rem', background: 'white',
+          padding: '0.5rem 1rem', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem', zIndex: 1000
+        }}>
+          <Navigation size={14} color="var(--primary)" />
+          {partnerLocation
+            ? `Pro location updated ${Math.floor((Date.now() - (partnerLocation.timestamp || Date.now())) / 1000)}s ago`
+            : 'Waiting for partner location...'}
+        </div>
       </div>
 
       <div className="card glass" style={{ borderBottomLeftRadius: 0, borderBottomRightRadius: 0, padding: '2rem', paddingBottom: '3rem', marginTop: '-20px', zIndex: 20, boxShadow: '0 -4px 20px rgba(0,0,0,0.1)' }}>

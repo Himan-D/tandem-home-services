@@ -17,7 +17,7 @@ export default function PartnerDashboard({ initialView }) {
   const { user, token, logout } = useAuth();
   const { on, emit } = useSocket();
   const navigate = useNavigate();
-  const locationSent = useRef(false);
+  const locationWatcherRef = useRef(null);
 
   const fetchJobs = () => {
     if (!token) return;
@@ -44,13 +44,18 @@ export default function PartnerDashboard({ initialView }) {
   }, [token]);
 
   useEffect(() => {
-    if (!navigator.geolocation || locationSent.current) return;
-    locationSent.current = true;
-    navigator.geolocation.getCurrentPosition(
+    if (!navigator.geolocation) return;
+    locationWatcherRef.current = navigator.geolocation.watchPosition(
       (pos) => emit('partner:location', { lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => {},
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );
+    return () => {
+      if (locationWatcherRef.current != null) {
+        navigator.geolocation.clearWatch(locationWatcherRef.current);
+        locationWatcherRef.current = null;
+      }
+    };
   }, [emit]);
 
   useEffect(() => {
