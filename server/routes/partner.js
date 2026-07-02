@@ -22,6 +22,13 @@ module.exports = function (prisma, io, services) {
 
   router.post('/me/onboard', authenticateToken, asyncHandler(async (req, res) => {
     const { phone, location, lat, lng } = req.body;
+    const existing = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { phone: true, walletBalance: true },
+    });
+    if (existing?.phone) return res.status(400).json({ error: 'Already onboarded' });
+
+    const bonus = existing.walletBalance === 0 ? { increment: 100 } : undefined;
     await prisma.user.update({
       where: { id: req.user.id },
       data: {
@@ -29,10 +36,12 @@ module.exports = function (prisma, io, services) {
         location,
         lat: lat || null,
         lng: lng || null,
-        walletBalance: { increment: 100 },
+        ...(bonus ? { walletBalance: bonus } : {}),
       },
     });
-    await notifyUser(req.user.id, 'both', 'Onboarding Complete', 'Welcome bonus: $100 credited to wallet.');
+    if (bonus) {
+      await notifyUser(req.user.id, 'both', 'Onboarding Complete', 'Welcome bonus: $100 credited to wallet.');
+    }
     res.json({ success: true });
   }));
 
@@ -164,6 +173,23 @@ module.exports = function (prisma, io, services) {
     }
     io.to(`user:${req.user.id}`).emit('shift:break', { action });
     res.json({ success: true, action });
+  }));
+
+  router.get('/notifications', authenticateToken, asyncHandler(async (req, res) => {
+    const notifs = await prisma.notification.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    res.json(notifs);
+  }));
+
+  router.patch('/notifications/:id/read', authenticateToken, asyncHandler(async (req, res) => {
+    await prisma.notification.updateMany({
+      where: { id: parseInt(req.params.id), userId: req.user.id },
+      data: { read: 1 },
+    });
+    res.json({ success: true });
   }));
 
   return router;

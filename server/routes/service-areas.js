@@ -1,5 +1,6 @@
 const express = require('express');
 const { asyncHandler } = require('../middleware/errorHandler');
+const logger = require('../lib/logger');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
 module.exports = function (prisma) {
@@ -97,8 +98,9 @@ module.exports = function (prisma) {
     try {
       await areas.delete(parseInt(req.params.id));
       res.json({ success: true });
-    } catch {
-      res.status(404).json({ error: 'Service area not found' });
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Service area not found' });
+      throw err;
     }
   }));
 

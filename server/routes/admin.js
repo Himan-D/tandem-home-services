@@ -1,5 +1,6 @@
 const express = require('express');
 const { asyncHandler } = require('../middleware/errorHandler');
+const logger = require('../lib/logger');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
 module.exports = function (prisma, io, services) {
@@ -60,7 +61,7 @@ module.exports = function (prisma, io, services) {
       ...p,
       hasLocation: p.lat !== null && p.lng !== null,
       online: onlinePartners.has(p.id),
-      servicesOffered: (() => { try { return JSON.parse(p.servicesOffered || '[]'); } catch { return []; })(),
+      servicesOffered: (() => { try { return JSON.parse(p.servicesOffered || '[]'); } catch (e) { return []; } })(),
     })));
   }));
 
@@ -115,8 +116,9 @@ module.exports = function (prisma, io, services) {
         data: { status: 'resolved' },
       });
       res.json(complaint);
-    } catch {
-      return res.status(404).json({ error: 'Complaint not found' });
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Complaint not found' });
+      throw err;
     }
   }));
 

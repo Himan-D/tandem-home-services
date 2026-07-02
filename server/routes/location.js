@@ -2,7 +2,6 @@ const express = require('express');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken } = require('../middleware/auth');
 const { validate, locationUpdateSchema } = require('../middleware/validate');
-const geo = require('../lib/geo');
 const bus = require('../event-bus');
 
 module.exports = function (prisma, io, services) {

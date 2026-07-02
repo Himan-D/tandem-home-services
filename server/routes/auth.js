@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const config = require('../config');
+const logger = require('../lib/logger');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { authLimiter, rateLimit } = require('../middleware/rateLimit');
@@ -108,8 +109,10 @@ module.exports = function (prisma, io, services) {
       const token = signToken(user);
       const { refreshToken } = await persistRefreshToken(prisma, user.id);
       res.status(201).json({ token, refreshToken, user });
-    } catch {
-      res.status(400).json({ error: 'Email already exists' });
+    } catch (err) {
+      if (err.code === 'P2002') return res.status(400).json({ error: 'Email already exists' });
+      logger.error({ err: err.message }, 'Registration failed');
+      res.status(500).json({ error: 'Registration failed' });
     }
   }));
 

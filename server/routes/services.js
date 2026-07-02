@@ -1,6 +1,7 @@
 const express = require('express');
 const { z } = require('zod');
 const { asyncHandler } = require('../middleware/errorHandler');
+const logger = require('../lib/logger');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 
@@ -48,8 +49,10 @@ module.exports = function (prisma) {
         data: { id: serviceId, title, basePrice, category, isActive },
       });
       res.status(201).json(service);
-    } catch {
-      res.status(409).json({ error: 'Service ID already exists' });
+    } catch (err) {
+      if (err.code === 'P2002') return res.status(409).json({ error: 'Service ID already exists' });
+      logger.error({ err: err.message }, 'Create service failed');
+      res.status(500).json({ error: 'Failed to create service' });
     }
   }));
 
@@ -75,8 +78,9 @@ module.exports = function (prisma) {
     try {
       await prisma.service.delete({ where: { id: String(req.params.id) } });
       res.json({ success: true });
-    } catch {
-      return res.status(404).json({ error: 'Service not found' });
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Service not found' });
+      throw err;
     }
   }));
 

@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { authenticateToken } = require('../middleware/auth');
 const { validate, createBookingSchema, ratingSchema, complaintSchema } = require('../middleware/validate');
@@ -50,7 +51,7 @@ module.exports = function (prisma, io, services) {
 
     const svc = await prisma.service.findUnique({ where: { id: String(serviceId) } });
     const title = svc ? svc.title : 'Custom Service';
-    const jobId = `JOB-${Math.floor(1000 + Math.random() * 9000)}`;
+    const jobId = `JOB-${crypto.randomUUID().slice(0, 8)}`;
     const payout = Math.floor(finalAmount * 0.75);
 
     let partnerId = null;

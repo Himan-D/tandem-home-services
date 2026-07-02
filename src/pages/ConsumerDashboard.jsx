@@ -21,7 +21,7 @@ export default function ConsumerDashboard() {
 
   const fetchBookings = () => {
     if (!token) return;
-    fetch(`${API_BASE}/api/my-bookings`, {
+    fetch(`${API_BASE}/api/bookings/my`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(res => res.json())

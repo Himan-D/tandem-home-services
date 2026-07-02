@@ -1,6 +1,7 @@
 const express = require('express');
 const { z } = require('zod');
 const { asyncHandler } = require('../middleware/errorHandler');
+const logger = require('../lib/logger');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 
@@ -97,8 +98,9 @@ module.exports = function (prisma) {
     try {
       await prisma.darkStore.delete({ where: { id: parseInt(req.params.id) } });
       res.json({ success: true });
-    } catch {
-      return res.status(404).json({ error: 'Dark store not found' });
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Dark store not found' });
+      throw err;
     }
   }));
 

@@ -32,7 +32,7 @@ export default function ConsumerBooking() {
         .then(res => res.json())
         .then(data => setUserProfile(data));
 
-      fetch(`${API_BASE}/api/my-bookings`, { headers: { 'Authorization': `Bearer ${token}` } })
+      fetch(`${API_BASE}/api/bookings/my`, { headers: { 'Authorization': `Bearer ${token}` } })
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) {

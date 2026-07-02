@@ -1,6 +1,7 @@
 const express = require('express');
 const { z } = require('zod');
 const { asyncHandler } = require('../middleware/errorHandler');
+const logger = require('../lib/logger');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 
@@ -35,8 +36,10 @@ module.exports = function (prisma) {
         data: { code, discountPercent, maxUses, expiresAt: expiresAt ? new Date(expiresAt) : null, isActive: 1 },
       });
       res.status(201).json(promo);
-    } catch {
-      res.status(409).json({ error: 'Promo code already exists' });
+    } catch (err) {
+      if (err.code === 'P2002') return res.status(409).json({ error: 'Promo code already exists' });
+      logger.error({ err: err.message }, 'Create promo failed');
+      res.status(500).json({ error: 'Failed to create promo' });
     }
   }));
 
@@ -62,8 +65,9 @@ module.exports = function (prisma) {
     try {
       await prisma.promoCode.delete({ where: { id: parseInt(req.params.id) } });
       res.json({ success: true });
-    } catch {
-      return res.status(404).json({ error: 'Promo not found' });
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Promo not found' });
+      throw err;
     }
   }));
 
