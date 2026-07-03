@@ -1,28 +1,36 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import Navbar from './components/Navbar';
-import ConsumerHome from './pages/ConsumerHome';
-import ConsumerBooking from './pages/ConsumerBooking';
-import PartnerDashboard from './pages/PartnerDashboard';
-import ConsumerDashboard from './pages/ConsumerDashboard';
-import AdminDashboard from './pages/AdminDashboard';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import MagicLink from './pages/MagicLink';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
-import Onboarding from './pages/Onboarding';
-import LiveTracking from './pages/LiveTracking';
-import JobNavigation from './pages/JobNavigation';
-import TandemPlus from './pages/TandemPlus';
-import BookingStatus from './pages/BookingStatus';
-import ServiceDetails from './pages/ServiceDetails';
-import Account from './pages/Account';
-import PlaceholderPage from './pages/PlaceholderPage';
 import AIAssistant from './components/AIAssistant';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import ConsumerBottomNav from './components/ConsumerBottomNav';
+
+const ConsumerHome = lazy(() => import('./pages/ConsumerHome'));
+const ConsumerBooking = lazy(() => import('./pages/ConsumerBooking'));
+const PartnerDashboard = lazy(() => import('./pages/PartnerDashboard'));
+const ConsumerDashboard = lazy(() => import('./pages/ConsumerDashboard'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const Login = lazy(() => import('./pages/Login'));
+const Signup = lazy(() => import('./pages/Signup'));
+const MagicLink = lazy(() => import('./pages/MagicLink'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const Onboarding = lazy(() => import('./pages/Onboarding'));
+const LiveTracking = lazy(() => import('./pages/LiveTracking'));
+const JobNavigation = lazy(() => import('./pages/JobNavigation'));
+const TandemPlus = lazy(() => import('./pages/TandemPlus'));
+const BookingStatus = lazy(() => import('./pages/BookingStatus'));
+const ServiceDetails = lazy(() => import('./pages/ServiceDetails'));
+const Account = lazy(() => import('./pages/Account'));
+const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
+
+const PageFallback = () => (
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+    <div className="spinner" aria-label="Loading" />
+  </div>
+);
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user } = useAuth();
@@ -46,6 +54,7 @@ export default function App() {
       <BrowserRouter>
         <ErrorBoundary>
           <Navbar />
+        <Suspense fallback={<PageFallback />}>
         <Routes>
           <Route path="/" element={<ConsumerHome />} />
           <Route path="/login" element={<Login />} />
@@ -154,6 +163,7 @@ export default function App() {
           <Route path="/page/:pageId" element={<PlaceholderPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
         <AIAssistant />
         <ConsumerBottomNav />
         </ErrorBoundary>

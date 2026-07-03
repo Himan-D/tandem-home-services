@@ -361,3 +361,16 @@ input:focus, select:focus, textarea:focus {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border, #e5e7eb);
+  border-top-color: var(--primary, #6366f1);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
