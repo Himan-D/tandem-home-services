@@ -1,8 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { API_BASE } from '../config';
+import { useState, useEffect } from 'react';
+import { API_BASE, STRIPE_PUBLISHABLE_KEY } from '../config';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Calendar, Clock, CreditCard, ChevronLeft, CheckCircle2 } from 'lucide-react';
+import { Calendar, CreditCard, ChevronLeft, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { CardElement, Elements } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
+const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
+
+function CardElementInput() {
+  return (
+    <div style={{ padding: '0.5rem 0' }}>
+      <CardElement
+        options={{
+          style: {
+            base: {
+              fontSize: '16px',
+              color: '#1a1a2e',
+              '::placeholder': { color: '#a0aec0' },
+            },
+          },
+        }}
+      />
+    </div>
+  );
+}
 
 export default function ConsumerBooking() {
   const { serviceId } = useParams();
@@ -64,8 +85,28 @@ export default function ConsumerBooking() {
     if (step < 3) {
       setStep(step + 1);
     } else {
-      // Submit booking to backend
       try {
+        let paymentIntentId = null;
+
+        if (finalTotalDue > 0 && stripePromise) {
+          const piRes = await fetch(`${API_BASE}/api/payments/create-payment-intent`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ amount: finalTotalDue }),
+          });
+          const piData = await piRes.json();
+          paymentIntentId = piData.paymentIntent?.id;
+
+          if (piData.paymentIntent?.client_secret) {
+            const stripe = await stripePromise;
+            const { error } = await stripe.confirmCardPayment(piData.paymentIntent.client_secret);
+            if (error) {
+              alert(`Payment failed: ${error.message}`);
+              return;
+            }
+          }
+        }
+
         const response = await fetch(`${API_BASE}/api/bookings`, {
           method: 'POST',
           headers: { 
@@ -78,7 +119,8 @@ export default function ConsumerBooking() {
             time: `${formData.date}, ${formData.time}`,
             amount: finalTotalDue,
             walletDeduction: walletDeduction,
-            preferredPartnerId: requestPreferredPro ? pastProId : null
+            preferredPartnerId: requestPreferredPro ? pastProId : null,
+            paymentIntentId,
           })
         });
         
@@ -345,17 +387,20 @@ export default function ConsumerBooking() {
                 </div>
               </div>
 
-              {/* Realistic Card Element Mockup */}
               <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
                   <CreditCard size={20} color="var(--text-muted)" />
                   <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>Credit or debit card</span>
                 </div>
-                <input type="text" placeholder="Card Number (4242 4242 4242 4242)" style={{ width: '100%', marginBottom: '1rem', border: '1px solid var(--border)', background: 'white' }} />
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <input type="text" placeholder="MM/YY" style={{ width: '50%', border: '1px solid var(--border)', background: 'white' }} />
-                  <input type="text" placeholder="CVC" style={{ width: '50%', border: '1px solid var(--border)', background: 'white' }} />
-                </div>
+                {stripePromise ? (
+                  <Elements stripe={stripePromise}>
+                    <CardElementInput />
+                  </Elements>
+                ) : (
+                  <div style={{ padding: '0.75rem', background: 'var(--bg-hover)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                    Card payment (dev mode — set VITE_STRIPE_PUBLISHABLE_KEY to enable)
+                  </div>
+                )}
               </div>
             </div>
           )}

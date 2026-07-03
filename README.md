@@ -247,7 +247,11 @@ Key variables (full list in `.env.example` and `server/config/index.js`):
 - Spatial index management and complaint resolution
 
 ### Platform
-- **Graceful degradation:** Redis down → in-memory fallback; Google Maps missing → OSRM → haversine; ML down → active services list
+- **Graceful degradation:** Redis down → in-memory fallback; Google Maps missing → OSRM → haversine; ML down → active services list; Stripe/SMTP/Twilio/OpenRouter unset → dev stubs
+- **Payments:** Stripe Payment Intents with webhook signature verification (raw-body capture via `express.json` verify hook); dev mode returns a fake succeeded intent when `STRIPE_SECRET_KEY` is unset
+- **Notifications:** Nodemailer (SMTP) + Twilio (SMS) with dev transports; in-app + Socket.IO realtime fan-out
+- **AI Assistant:** OpenRouter-backed chat with a contextual fallback when `OPENROUTER_API_KEY` is unset
+- **Safety:** SOS endpoint alerts all admins (email + in-app) and the booking room via Socket.IO
 - **Refresh token rotation:** SHA-256 hashed tokens with family-based revocation chains; password change invalidates all sessions
 - **Order state machine:** Formal state transitions (`PENDING → INVENTORY_VALIDATED → RIDER_ASSIGNED → ... → COMPLETED`) with idempotency keys and BullMQ queues
 - **GPS pipeline:** Raw coordinates → Kalman filter smoothing → accuracy/speed validation → geofence (approach, dwell, arrival) → snap-to-roads
@@ -281,6 +285,10 @@ With the server running, visit:
 | `POST` | `/api/tracking/location` | JWT | Send GPS location |
 | `GET` | `/api/tracking/eta/:orderId` | JWT | Get order ETA |
 | `POST` | `/api/service-areas/check` | — | Check point in service area |
+| `POST` | `/api/payments/create-payment-intent` | JWT | Create Stripe Payment Intent (dev stub if unconfigured) |
+| `POST` | `/api/payments/webhook` | — | Stripe webhook (signature-verified) |
+| `POST` | `/api/ai/chat` | optional JWT | AI assistant chat (OpenRouter or contextual fallback) |
+| `POST` | `/api/sos/trigger` | JWT | Trigger SOS safety alert |
 
 ## Database
 

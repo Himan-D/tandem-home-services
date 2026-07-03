@@ -17,6 +17,8 @@
     "@googlemaps/google-maps-services-js": "^3.4.2",
     "@prisma/client": "^5.22.0",
     "@socket.io/redis-adapter": "^8.3.0",
+    "@stripe/react-stripe-js": "^6.7.0",
+    "@stripe/stripe-js": "^9.9.0",
     "bullmq": "^5.79.2",
     "dotenv": "^17.4.2",
     "helmet": "^8.2.0",

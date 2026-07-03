@@ -96,6 +96,32 @@ const config = {
     dwellSec: parseInt(env.GEOFENCE_DWELL_SEC || '30'),
     approachingM: parseFloat(env.GEOFENCE_APPROACHING_M || '500'),
   },
+
+  email: {
+    host: env.SMTP_HOST || '',
+    port: parseInt(env.SMTP_PORT || '587', 10),
+    secure: env.SMTP_SECURE === 'true',
+    user: env.SMTP_USER || '',
+    pass: env.SMTP_PASS || '',
+    from: env.SMTP_FROM || 'noreply@tandem.app',
+  },
+
+  twilio: {
+    accountSid: env.TWILIO_ACCOUNT_SID || '',
+    authToken: env.TWILIO_AUTH_TOKEN || '',
+    fromNumber: env.TWILIO_FROM_NUMBER || '',
+  },
+
+  stripe: {
+    publishableKey: env.STRIPE_PUBLISHABLE_KEY || '',
+    secretKey: env.STRIPE_SECRET_KEY || '',
+    webhookSecret: env.STRIPE_WEBHOOK_SECRET || '',
+  },
+
+  openrouter: {
+    apiKey: env.OPENROUTER_API_KEY || '',
+    model: env.OPENROUTER_MODEL || 'openai/gpt-4o-mini',
+  },
 };
 
 module.exports = config;

@@ -45,7 +45,10 @@ async function boot() {
     credentials: true,
     maxAge: 86400,
   }));
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({
+    limit: '1mb',
+    verify: (req, _res, buf) => { req.rawBody = buf; },
+  }));
   app.use(rateLimit(apiLimiter));
   app.use(requestId);
   app.use(auditLog);
@@ -78,17 +81,24 @@ async function boot() {
   spatialIndex.load(partners);
   logger.info({ count: partners.length }, 'Spatial index loaded');
 
+  const { sendEmail } = require('./lib/email');
+  const { sendSMS } = require('./lib/sms');
+
   async function notifyUser(userId, method, title, message) {
     await prisma.notification.create({
       data: { userId, title, message, type: method },
     });
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true, phone: true } });
     if (user) {
-      if (method === 'email' || method === 'both') {
-        logger.info({ to: user.email, title }, 'Email notification (stub)');
+      if ((method === 'email' || method === 'both') && user.email) {
+        sendEmail({ to: user.email, subject: title, text: message }).catch((err) =>
+          logger.error({ err: err.message, userId }, 'Email send failed')
+        );
       }
-      if (method === 'sms' || method === 'both') {
-        logger.info({ to: user.name, title }, 'SMS notification (stub)');
+      if ((method === 'sms' || method === 'both') && user.phone) {
+        sendSMS({ to: user.phone, message }).catch((err) =>
+          logger.error({ err: err.message, userId }, 'SMS send failed')
+        );
       }
     }
     io.to(`user:${userId}`).emit('notification', { title, message });
@@ -123,6 +133,9 @@ async function boot() {
   app.use('/api/tracking', require('./routes/tracking')(prisma, io, sharedServices));
   app.use('/api/places', require('./routes/places')());
   app.use('/api/service-areas', require('./routes/service-areas')(prisma));
+  app.use('/api/payments', require('./routes/payments')(prisma));
+  app.use('/api/ai', require('./routes/ai')(prisma));
+  app.use('/api/sos', require('./routes/sos')(prisma, io, sharedServices));
 
   app.get('/health', liveness);
   app.get('/healthz', liveness);

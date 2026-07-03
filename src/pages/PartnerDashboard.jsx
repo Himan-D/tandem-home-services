@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Briefcase, DollarSign, Calendar, Settings, Bell, CheckCircle, XCircle, MapPin, User, LogOut, TrendingUp, Navigation, Star } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -14,10 +14,18 @@ export default function PartnerDashboard({ initialView }) {
   const [myServices, setMyServices] = useState([]);
   const [availableServices, setAvailableServices] = useState([]);
   const [view, setView] = useState(initialView || 'new_jobs');
+  const [shifts, setShifts] = useState([]);
   const { user, token, logout } = useAuth();
   const { on, emit } = useSocket();
   const navigate = useNavigate();
   const locationWatcherRef = useRef(null);
+
+  const fetchShifts = () => {
+    if (!token) return;
+    fetch(`${API_BASE}/api/shifts`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(res => res.json()).then(data => setShifts(data || []));
+  };
 
   const fetchJobs = () => {
     if (!token) return;
@@ -39,6 +47,7 @@ export default function PartnerDashboard({ initialView }) {
   useEffect(() => {
     if (!token) return;
     fetchJobs();
+    fetchShifts();
     const interval = setInterval(fetchJobs, 5000);
     return () => clearInterval(interval);
   }, [token]);
@@ -220,18 +229,35 @@ export default function PartnerDashboard({ initialView }) {
         {view === 'calendar' && (
           <div className="animate-fade-up">
             <div className="card glass" style={{ marginBottom: '3rem', padding: '0', overflow: 'hidden' }}>
+              <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border)' }}>
+                <h4 style={{ marginBottom: '0.5rem' }}>Your Shift Schedule</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Configure your availability in the Shifts section below.</p>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: 'var(--bg-hover)', borderBottom: '1px solid var(--border)' }}>
                 {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
                   <div key={day} style={{ padding: '1rem', textAlign: 'center', fontWeight: 600, color: 'var(--text-muted)' }}>{day}</div>
                 ))}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-                {Array.from({ length: 14 }).map((_, i) => (
-                  <div key={i} style={{ padding: '1rem', minHeight: '100px', borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>{i + 1}</span>
-                    {i === 2 && <div style={{ background: 'var(--primary-bg)', color: 'var(--primary)', padding: '0.25rem', borderRadius: '4px', fontSize: '0.75rem', marginTop: 'auto', fontWeight: 600 }}>1 Job</div>}
-                  </div>
-                ))}
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
+                  const shift = shifts.find(s => s.dayOfWeek === i);
+                  const today = new Date().getDay();
+                  const adjustedToday = today === 0 ? 6 : today - 1;
+                  return (
+                    <div key={day} style={{ padding: '1rem', minHeight: '120px', borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)', background: adjustedToday === i ? 'var(--bg-hover)' : 'transparent' }}>
+                      <span style={{ color: adjustedToday === i ? 'var(--primary)' : 'var(--text-muted)', fontWeight: adjustedToday === i ? 700 : 400, fontSize: '0.875rem' }}>{day}</span>
+                      {shift ? (
+                        <div style={{ marginTop: '0.5rem', background: 'var(--primary-bg)', borderRadius: 'var(--radius-sm)', padding: '0.5rem' }}>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--primary)' }}>Active</div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{shift.startTime} — {shift.endTime}</div>
+                          {shift.breakStart && <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Break: {shift.breakStart}-{shift.breakEnd}</div>}
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Off</div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <h3 style={{ marginBottom: '1.5rem' }}>Upcoming & Accepted Jobs</h3>

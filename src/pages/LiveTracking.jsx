@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MapPin, Phone, ShieldCheck, ChevronLeft, ChevronRight, MessageSquare, ShieldAlert, X, CheckCircle2, Star, Navigation } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -29,7 +29,7 @@ export default function LiveTracking() {
   useEffect(() => {
     if (!token) return;
     joinBooking(jobId);
-    fetch(`${API_BASE}/api/my-bookings`, {
+    fetch(`${API_BASE}/api/bookings/my`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(res => res.json())
@@ -242,7 +242,13 @@ export default function LiveTracking() {
               <div>{booking.location}</div>
             </div>
           </div>
-          <button className="btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderColor: 'red', color: 'red', padding: '0.5rem 1rem' }} onClick={() => alert('SOS Alert Triggered! Emergency services and Tandem Trust & Safety team have been notified.')}>
+          <button className="btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderColor: 'red', color: 'red', padding: '0.5rem 1rem' }} onClick={() => {
+            fetch(`${API_BASE}/api/sos/trigger`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ bookingId: jobId, lat: booking?.lat, lng: booking?.lng }),
+            }).then(res => res.json()).then(data => alert(data.message || 'SOS alert sent.'));
+          }}>
             <ShieldAlert size={18} /> SOS
           </button>
         </div>
