@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { API_BASE } from '../config';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Star, Shield, Clock, Check, Plus, ChevronRight } from 'lucide-react';
@@ -25,6 +25,7 @@ export default function ServiceDetails() {
   const navigate = useNavigate();
   const [service, setService] = useState(null);
   const [cart, setCart] = useState([]);
+  const [reviewsData, setReviewsData] = useState({ average: null, count: 0, reviews: [] });
 
   useEffect(() => {
     fetch(`${API_BASE}/api/services`)
@@ -33,6 +34,10 @@ export default function ServiceDetails() {
         const found = data.find(s => s.id === serviceId);
         setService(found);
       });
+    fetch(`${API_BASE}/api/services/${serviceId}/reviews?limit=10`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data) setReviewsData(data); })
+      .catch(() => {});
   }, [serviceId]);
 
   // Use mapped subservices, or a generic fallback if not in the mock list
@@ -65,7 +70,10 @@ export default function ServiceDetails() {
           </Link>
           <h1 style={{ fontSize: '3rem', fontWeight: 800, marginBottom: '1rem' }}>{service.title}</h1>
           <div style={{ display: 'flex', gap: '1.5rem', color: 'var(--text-muted)', fontSize: '0.9375rem' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Star size={16} color="var(--primary)" fill="var(--primary)" /> 4.8 (12k+ bookings)</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Star size={16} color="var(--primary)" fill="var(--primary)" />
+              {reviewsData.average ? `${reviewsData.average} (${reviewsData.count} review${reviewsData.count === 1 ? '' : 's'})` : 'New service'}
+            </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Shield size={16} /> Tandem Guarantee</span>
           </div>
         </div>
@@ -119,6 +127,42 @@ export default function ServiceDetails() {
             <li style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}><Star size={20} color="var(--success)" style={{ flexShrink: 0 }} /> High quality service</li>
           </ul>
         </div>
+      </div>
+
+      {/* Reviews */}
+      <div className="container" style={{ paddingTop: '3rem', paddingBottom: '2rem' }}>
+        <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Star size={22} color="var(--primary)" fill="var(--primary)" /> Customer Reviews
+          {reviewsData.average && (
+            <span style={{ fontSize: '1rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+              {reviewsData.average} avg · {reviewsData.count} total
+            </span>
+          )}
+        </h2>
+        {reviewsData.reviews.length === 0 ? (
+          <div className="card glass" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+            No reviews yet. Be the first to book and review this service!
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {reviewsData.reviews.map((r) => (
+              <div key={r.id} className="card glass" style={{ padding: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ fontWeight: 600 }}>{r.customerName}</div>
+                  <div style={{ display: 'flex', gap: '2px' }}>
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <Star key={s} size={14} color="var(--warning)" fill={s <= r.rating ? 'var(--warning)' : 'none'} />
+                    ))}
+                  </div>
+                </div>
+                {r.review && <p style={{ color: 'var(--text-muted)', fontSize: '0.9375rem', lineHeight: 1.5 }}>{r.review}</p>}
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                  {new Date(r.createdAt).toLocaleDateString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Floating Bottom Cart Bar */}

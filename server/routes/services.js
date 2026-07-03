@@ -41,6 +41,37 @@ module.exports = function (prisma) {
     res.json(service);
   }));
 
+  router.get('/:id/reviews', asyncHandler(async (req, res) => {
+    const serviceId = String(req.params.id);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+
+    const [reviews, agg] = await Promise.all([
+      prisma.rating.findMany({
+        where: { booking: { serviceId } },
+        include: { customer: { select: { name: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      }),
+      prisma.rating.aggregate({
+        where: { booking: { serviceId } },
+        _avg: { rating: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    res.json({
+      average: agg._avg.rating ? Number(agg._avg.rating.toFixed(2)) : null,
+      count: agg._count._all,
+      reviews: reviews.map((r) => ({
+        id: r.id,
+        rating: r.rating,
+        review: r.review,
+        customerName: r.customer?.name || 'Anonymous',
+        createdAt: r.createdAt,
+      })),
+    });
+  }));
+
   router.post('/', authenticateToken, requireRole('admin'), validate(createServiceSchema), asyncHandler(async (req, res) => {
     const { id, title, basePrice, category, isActive } = req.body;
     const serviceId = id || title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');

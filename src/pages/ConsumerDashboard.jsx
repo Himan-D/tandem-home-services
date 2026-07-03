@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, CheckCircle, MapPin, Calendar, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -43,37 +43,35 @@ export default function ConsumerDashboard() {
   }, [on]);
 
   const submitRating = async () => {
-    await fetch(`${API_BASE}/api/ratings`, {
+    const res = await fetch(`${API_BASE}/api/bookings/${ratingTarget}/rate`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json' 
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ bookingId: ratingTarget, rating: ratingValue, review })
     });
+    if (!res.ok) {
+      alert('Could not submit rating. Please try again.');
+      return;
+    }
     setRatingTarget(null); setReview(''); fetchBookings();
   };
 
   const submitComplaint = async () => {
-    await fetch(`${API_BASE}/api/complaints`, {
+    const res = await fetch(`${API_BASE}/api/bookings/${complaintTarget}/complaint`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json' 
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ bookingId: complaintTarget, reason: complaintReason, description: complaintDesc })
     });
-    setComplaintTarget(null); setComplaintDesc(''); fetchBookings();
-  };
-
-  const refreshBooking = async (jobId) => {
-    const res = await fetch(`${API_BASE}/api/my-bookings`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setBookings(data);
+    if (!res.ok) {
+      alert('Could not submit complaint. Please try again.');
+      return;
     }
+    setComplaintTarget(null); setComplaintDesc(''); fetchBookings();
   };
 
   return (
@@ -150,9 +148,9 @@ export default function ConsumerDashboard() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><MapPin size={16} /> {job.location}</span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Calendar size={16} /> {job.time}</span>
-                    {job.partnerName && (
+                    {job.partner_name && (
                       <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary)', fontWeight: 600, marginTop: '0.5rem' }}>
-                        <CheckCircle size={16} /> Assigned to Pro: {job.partnerName}
+                        <CheckCircle size={16} /> Assigned to Pro: {job.partner_name}
                       </span>
                     )}
                     {job.match_score && (
