@@ -135,6 +135,57 @@ class RecommendationClient {
   async recordState(serviceStates) {
     return this.request('POST', '/record-state', { service_states: serviceStates });
   }
+
+  async checkFraud(bookings) {
+    const result = await this.request('POST', '/check-fraud', { bookings });
+    return result?.fraud_scores || [];
+  }
+
+  async predictNoShow(bookings) {
+    const result = await this.request('POST', '/predict-noshow', { bookings });
+    return result?.noshow_predictions || [];
+  }
+
+  async predictCompletionTime(bookings) {
+    const result = await this.request('POST', '/predict-completion-time', { bookings });
+    return result?.completion_times || [];
+  }
+
+  async recommendSlots(serviceId, dayOfWeek = 0, topK = 5) {
+    return this.request('POST', '/recommend-slots', {
+      service_id: serviceId,
+      day_of_week: dayOfWeek,
+      top_k: topK,
+    });
+  }
+
+  async analyzeReview(text) {
+    return this.request('POST', '/analyze-review', { text });
+  }
+
+  async summarizeReviews(reviews) {
+    return this.request('POST', '/summarize-reviews', { reviews });
+  }
+
+  async trainFraud(features, targets) {
+    return this.request('POST', '/train/fraud', { features, targets });
+  }
+
+  async trainNoShow(features, targets) {
+    return this.request('POST', '/train/noshow', { features, targets });
+  }
+
+  async trainCompletion(features, targets) {
+    return this.request('POST', '/train/completion', { features, targets });
+  }
+
+  async trainSlots(slotData) {
+    return this.request('POST', '/train/slots', { slot_data: slotData });
+  }
+
+  async trainReviewAnalyzer(reviews) {
+    return this.request('POST', '/train/review-analyzer', { reviews });
+  }
 }
 
 module.exports = { RecommendationClient };

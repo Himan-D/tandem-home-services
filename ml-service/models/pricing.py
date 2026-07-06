@@ -5,8 +5,11 @@ from .tabnet import TabNetRegressor
 
 
 class DynamicPricingModel(nn.Module):
-    def __init__(self, n_features=14):
+    N_FEATURES = 14
+
+    def __init__(self, n_features=None):
         super().__init__()
+        n_features = n_features or self.N_FEATURES
         self.tabnet = TabNetRegressor(n_features=n_features, n_d=32, n_a=32, n_steps=4, output_dim=1)
 
     def forward(self, x):
@@ -20,6 +23,16 @@ class DynamicPricingModel(nn.Module):
     def get_feature_importance(self, x):
         _, masks = self.tabnet(x)
         return torch.stack(masks, dim=0).mean(dim=0).mean(dim=0).detach().cpu().numpy()
+
+    def save(self, path):
+        torch.save(self.state_dict(), path)
+
+    @classmethod
+    def load(cls, path):
+        model = cls()
+        model.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
+        model.eval()
+        return model
 
 
 def build_price_features(booking):

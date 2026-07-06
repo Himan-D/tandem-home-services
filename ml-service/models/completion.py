@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
-import numpy as np
 from .tabnet import TabNetRegressor
 
 
-class ETAPredictor(nn.Module):
+class CompletionTimePredictor(nn.Module):
     N_FEATURES = 10
 
     def __init__(self, n_features=None):
@@ -35,16 +34,16 @@ class ETAPredictor(nn.Module):
         return model
 
 
-def build_eta_features(route):
+def build_completion_features(booking):
     return torch.tensor([
-        min(route.get("distance_km", 5) / 50, 1.0),
-        route.get("hour_of_day", 12) / 23,
-        route.get("day_of_week", 0) / 6,
-        float(route.get("is_rush_hour", False)),
-        min(route.get("traffic_factor", 1.0) / 3.0, 1.0),
-        min(route.get("historical_avg_speed", 30) / 100, 1.0),
-        min(route.get("service_prep_time", 15) / 120, 1.0),
-        min(route.get("num_stops", 0) / 10, 1.0),
-        float(route.get("is_weekend", False)),
-        min(max(route.get("weather_factor", 1.0) - 0.5, 0) / 1.5, 1.0),
+        min(booking.get("service_category_encoded", 0) / 13, 1.0),
+        min(booking.get("num_bedrooms", 1) / 10, 1.0),
+        min(booking.get("num_bathrooms", 1) / 10, 1.0),
+        min(booking.get("sq_footage", 1000) / 5000, 1.0),
+        float(booking.get("has_previous_booking", True)),
+        min(booking.get("partner_experience_months", 12) / 120, 1.0),
+        float(booking.get("is_weekend", False)),
+        min(booking.get("hour_of_day", 12) / 23, 1.0),
+        min(booking.get("distance_km", 5) / 30, 1.0),
+        min(booking.get("add_on_count", 0) / 5, 1.0),
     ], dtype=torch.float32)

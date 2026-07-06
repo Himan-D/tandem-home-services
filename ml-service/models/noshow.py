@@ -1,16 +1,15 @@
 import torch
 import torch.nn as nn
-import numpy as np
-from .tabnet import TabNetRegressor
+from .tabnet import TabNetBinaryClassifier
 
 
-class ETAPredictor(nn.Module):
+class NoShowPredictor(nn.Module):
     N_FEATURES = 10
 
     def __init__(self, n_features=None):
         super().__init__()
         n_features = n_features or self.N_FEATURES
-        self.tabnet = TabNetRegressor(n_features=n_features, n_d=24, n_a=24, n_steps=3, output_dim=1)
+        self.tabnet = TabNetBinaryClassifier(n_features=n_features, n_d=20, n_a=20, n_steps=3)
 
     def forward(self, x):
         return self.tabnet(x)
@@ -35,16 +34,16 @@ class ETAPredictor(nn.Module):
         return model
 
 
-def build_eta_features(route):
+def build_noshow_features(booking):
     return torch.tensor([
-        min(route.get("distance_km", 5) / 50, 1.0),
-        route.get("hour_of_day", 12) / 23,
-        route.get("day_of_week", 0) / 6,
-        float(route.get("is_rush_hour", False)),
-        min(route.get("traffic_factor", 1.0) / 3.0, 1.0),
-        min(route.get("historical_avg_speed", 30) / 100, 1.0),
-        min(route.get("service_prep_time", 15) / 120, 1.0),
-        min(route.get("num_stops", 0) / 10, 1.0),
-        float(route.get("is_weekend", False)),
-        min(max(route.get("weather_factor", 1.0) - 0.5, 0) / 1.5, 1.0),
+        min(booking.get("customer_booking_count", 0) / 50, 1.0),
+        float(booking.get("customer_noshow_history", False)),
+        float(booking.get("is_weekend", False)),
+        min(booking.get("hour_of_day", 12) / 23, 1.0),
+        min(booking.get("lead_time_hours", 24) / 168, 1.0),
+        min(booking.get("booking_amount", 100) / 500, 1.0),
+        float(booking.get("is_recurring", False)),
+        float(booking.get("has_rating_history", False)),
+        float(booking.get("is_plus_member", False)),
+        min(booking.get("partner_rating", 4.5) / 5.0, 1.0),
     ], dtype=torch.float32)
