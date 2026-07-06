@@ -7,3 +7,6 @@ dist/
 *.log
 .vite/
 osrm-data/
+__pycache__/
+*.pyc
+ml-service/.venv/
