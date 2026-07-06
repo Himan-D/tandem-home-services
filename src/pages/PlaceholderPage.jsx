@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { ChevronLeft, Info, Briefcase, Shield, CheckCircle, Mail, HelpCircle, ChevronDown, ChevronUp, Clock, Award, Star, Compass, Users, Heart, Send } from 'lucide-react';
 
 export default function PlaceholderPage() {
@@ -384,8 +385,23 @@ export default function PlaceholderPage() {
     }
   };
 
+  const ogTitle = `${title} | Tandem`;
+  const ogDesc = pageId === 'about-us' ? 'Learn about Tandem\'s mission to revolutionize home services.' :
+    pageId === 'careers' ? 'Join the Tandem team and help build the future of home services.' :
+    pageId === 'safety' ? 'Tandem\'s comprehensive safety guarantee and 10-point provider vetting process.' :
+    pageId === 'help-center' ? 'Frequently asked questions about Tandem booking, pricing, and policies.' :
+    `Learn more about Tandem home services.`;
+
   return (
     <div className="container" style={{ padding: '6rem 1rem 5rem', minHeight: '100vh' }}>
+      <Helmet>
+        <title>{ogTitle}</title>
+        <meta name="description" content={ogDesc} />
+        <meta property="og:title" content={ogTitle} />
+        <meta property="og:description" content={ogDesc} />
+        <meta property="og:type" content="website" />
+        <link rel="canonical" href={`https://tandem.com/page/${pageId}`} />
+      </Helmet>
       <button className="btn-outline" onClick={() => navigate(-1)} style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
         <ChevronLeft size={20} /> Back
       </button>

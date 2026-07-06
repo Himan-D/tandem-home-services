@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { API_BASE, STRIPE_PUBLISHABLE_KEY } from '../config';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Calendar, CreditCard, ChevronLeft, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { CardElement, Elements } from '@stripe/react-stripe-js';
@@ -34,6 +34,12 @@ export default function ConsumerBooking() {
   const [userProfile, setUserProfile] = useState(null);
   const [promo, setPromo] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
+
+  const [giftCardCode, setGiftCardCode] = useState('');
+  const [giftCardBalance, setGiftCardBalance] = useState(0);
+  const [giftCardApplied, setGiftCardApplied] = useState(false);
+  const [giftCardLoading, setGiftCardLoading] = useState(false);
+  const [giftCardError, setGiftCardError] = useState('');
   
   // Custom states added for bedrooms, bathrooms and wallet toggle
   const [bedrooms, setBedrooms] = useState(1);
@@ -69,6 +75,29 @@ export default function ConsumerBooking() {
     else alert('Invalid promo code');
   };
 
+  const handleApplyGiftCard = async () => {
+    if (!giftCardCode) return;
+    setGiftCardLoading(true);
+    setGiftCardError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/gift-cards/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ code: giftCardCode }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setGiftCardBalance(data.remainingBalance);
+        setGiftCardApplied(true);
+      } else {
+        setGiftCardError(data.error || 'Invalid gift card');
+      }
+    } catch {
+      setGiftCardError('Failed to check gift card');
+    }
+    setGiftCardLoading(false);
+  };
+
   // Find preferred pro details
   const pastCompleted = myBookings.find(b => b.status === 'completed' && b.partnerId);
   const pastProName = pastCompleted ? (pastCompleted.partnerName || 'Tandem Pro') : null;
@@ -77,9 +106,11 @@ export default function ConsumerBooking() {
   // Pricing computations
   const calculatedTotal = baseServiceTotal + (bedrooms - 1) * 20 + (bathrooms - 1) * 15;
   const walletBalance = userProfile?.walletBalance || 0;
-  const priceBeforeWallet = calculatedTotal + 12.50 - (userProfile?.isPlusMember === 1 ? calculatedTotal * 0.10 : 0) - (promoApplied ? 20 : 0);
-  const walletDeduction = useWallet ? Math.min(walletBalance, priceBeforeWallet) : 0;
-  const finalTotalDue = Math.max(0, priceBeforeWallet - walletDeduction);
+  const priceAfterDiscounts = calculatedTotal + 12.50 - (userProfile?.isPlusMember === 1 ? calculatedTotal * 0.10 : 0) - (promoApplied ? 20 : 0);
+  const giftCardDeduction = giftCardApplied ? Math.min(giftCardBalance, priceAfterDiscounts) : 0;
+  const priceAfterGiftCard = priceAfterDiscounts - giftCardDeduction;
+  const walletDeduction = useWallet ? Math.min(walletBalance, priceAfterGiftCard) : 0;
+  const finalTotalDue = Math.max(0, priceAfterGiftCard - walletDeduction);
 
   const handleNext = async () => {
     if (step < 3) {
@@ -121,6 +152,8 @@ export default function ConsumerBooking() {
             walletDeduction: walletDeduction,
             preferredPartnerId: requestPreferredPro ? pastProId : null,
             paymentIntentId,
+            giftCardCode: giftCardApplied ? giftCardCode : undefined,
+            giftCardAmount: giftCardDeduction > 0 ? giftCardDeduction : undefined,
           })
         });
         
@@ -306,6 +339,8 @@ export default function ConsumerBooking() {
                   )}
                 </div>
 
+                <BundleRecommendations serviceId={serviceId} />
+
                 <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '1rem 0' }} />
 
                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.95rem' }}>
@@ -333,6 +368,13 @@ export default function ConsumerBooking() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--success)' }}>
                       <span>Promo Code (WELCOME20)</span>
                       <span>-$20.00</span>
+                    </div>
+                  )}
+
+                  {giftCardDeduction > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f59e0b', fontWeight: 600 }}>
+                      <span>Gift Card</span>
+                      <span>-${giftCardDeduction.toFixed(2)}</span>
                     </div>
                   )}
 
@@ -364,6 +406,32 @@ export default function ConsumerBooking() {
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem' }}>
                   <input type="text" placeholder="Promo code" value={promo} onChange={(e) => setPromo(e.target.value)} style={{ flex: 1 }} />
                   <button className="btn-outline" onClick={handleApplyPromo}>Apply</button>
+                </div>
+              )}
+
+              {/* Gift Card */}
+              {giftCardApplied ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--bg-card)', border: '1px solid #f59e0b', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ width: 24, height: 24, background: '#f59e0b', color: '#fff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 800 }}>G</div>
+                    <div>
+                      <span style={{ fontWeight: 600 }}>Gift Card Applied</span>
+                      <span style={{ marginLeft: '0.5rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>{giftCardCode}</span>
+                    </div>
+                  </div>
+                  <button className="btn-outline" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }} onClick={() => { setGiftCardApplied(false); setGiftCardBalance(0); setGiftCardCode(''); setGiftCardError(''); }}>
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <div style={{ marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.25rem' }}>
+                    <input type="text" placeholder="Gift card code (e.g. GIFT-XXXX-XXXX-XXXX)" value={giftCardCode} onChange={(e) => setGiftCardCode(e.target.value)} style={{ flex: 1 }} />
+                    <button className="btn-outline" onClick={handleApplyGiftCard} disabled={giftCardLoading}>
+                      {giftCardLoading ? '...' : 'Apply'}
+                    </button>
+                  </div>
+                  {giftCardError && <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '0.25rem' }}>{giftCardError}</p>}
                 </div>
               )}
 
@@ -412,6 +480,52 @@ export default function ConsumerBooking() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function BundleRecommendations({ serviceId }) {
+  const [bundles, setBundles] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!serviceId) return;
+    setLoading(true);
+    fetch(`${API_BASE}/api/ml/frequently-bought-together`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serviceId }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.recommendations?.length) setBundles(data.recommendations);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [serviceId]);
+
+  if (!bundles || bundles.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--primary-bg)', borderRadius: 'var(--radius-md)' }}>
+      <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--primary)', marginBottom: '0.5rem' }}>
+        Frequently Bought Together
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        {bundles.slice(0, 3).map((rec) => (
+          <div key={rec.service_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+            <span style={{ textTransform: 'capitalize' }}>{rec.service_id.replace(/_/g, ' ')}</span>
+            <Link to={`/service/${rec.service_id}`} style={{ color: 'var(--primary)', fontWeight: 500, textDecoration: 'none', fontSize: '0.8rem' }}>
+              View Service →
+            </Link>
+          </div>
+        ))}
+      </div>
+      {bundles.length > 0 && (
+        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+          ML-powered recommendations
+        </div>
+      )}
     </div>
   );
 }

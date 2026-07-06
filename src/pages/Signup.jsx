@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { API_BASE } from '../config';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../context/AuthContext';
 
 export default function Signup() {
@@ -56,6 +57,14 @@ export default function Signup() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)' }}>
+      <Helmet>
+        <title>Sign Up | Tandem</title>
+        <meta name="description" content="Create a Tandem account to book home services instantly. Join as a customer or service professional." />
+        <meta property="og:title" content="Sign Up | Tandem" />
+        <meta property="og:description" content="Create a Tandem account to book home services." />
+        <meta property="og:image" content="https://tandem.com/og-image.png" />
+        <meta property="twitter:card" content="summary_large_image" />
+      </Helmet>
       <div className="card glass animate-fade-up" style={{ width: '100%', maxWidth: '400px', padding: '3rem 2rem' }}>
         <h2 style={{ marginBottom: '0.5rem', textAlign: 'center' }}>Create Account</h2>
         <p style={{ color: 'var(--text-muted)', textAlign: 'center', marginBottom: '2rem' }}>Join Tandem today</p>
@@ -63,6 +72,9 @@ export default function Signup() {
         {error && <div style={{ background: 'rgba(255,0,0,0.1)', color: 'red', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.5rem', textAlign: 'center', fontSize: '0.875rem' }}>{error}</div>}
         
         <form onSubmit={handleSignup}>
+          <div style={{ position: 'absolute', left: '-9999px' }} aria-hidden="true">
+            <input type="text" name="website" tabIndex={-1} autoComplete="off" />
+          </div>
           <div style={{ marginBottom: '1.25rem' }}>
             <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Full Name</label>
             <input 

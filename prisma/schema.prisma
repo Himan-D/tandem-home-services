@@ -43,6 +43,8 @@ model User {
   ordersAsCustomer OrderStateMachine[] @relation("order_customer")
   ordersAsRider    OrderStateMachine[] @relation("order_rider")
   riderTasks        RiderTask[]
+  giftCardsPurchased   GiftCard[]            @relation("gift_card_purchases")
+  giftCardRedemptions  GiftCardRedemption[]   @relation("gift_card_redemptions")
 
   @@map("users")
 }
@@ -83,6 +85,7 @@ model Booking {
   partner         User?              @relation("booking_partner", fields: [partnerId], references: [id])
   service         Service?           @relation(fields: [serviceId], references: [id])
   declinedBy      DeclinedBooking[]
+  giftCardRedemptions GiftCardRedemption[]
 
   @@map("bookings")
 }
@@ -321,6 +324,41 @@ model PartnerShift {
 
   @@index([partnerId, dayOfWeek])
   @@map("partner_shifts")
+}
+
+model GiftCard {
+  id               Int      @id @default(autoincrement())
+  code             String   @unique
+  initialBalance   Float    @map("initial_balance")
+  remainingBalance Float    @map("remaining_balance")
+  purchaserId      Int      @map("purchaser_id")
+  recipientEmail   String?  @map("recipient_email")
+  recipientName    String?  @map("recipient_name")
+  message          String?
+  status           String   @default("active")
+  expiresAt        DateTime @map("expires_at")
+  redeemedAt       DateTime? @map("redeemed_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  purchaser    User                   @relation("gift_card_purchases", fields: [purchaserId], references: [id])
+  redemptions  GiftCardRedemption[]
+
+  @@map("gift_cards")
+}
+
+model GiftCardRedemption {
+  id         Int      @id @default(autoincrement())
+  giftCardId Int      @map("gift_card_id")
+  bookingId  String   @map("booking_id")
+  amount     Float
+  redeemedBy Int      @map("redeemed_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  giftCard GiftCard @relation(fields: [giftCardId], references: [id])
+  booking  Booking  @relation(fields: [bookingId], references: [id])
+  redeemer User     @relation("gift_card_redemptions", fields: [redeemedBy], references: [id])
+
+  @@map("gift_card_redemptions")
 }
 
 model ServiceArea {

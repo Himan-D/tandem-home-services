@@ -22,6 +22,8 @@ const createBookingSchema = z.object({
   lat: z.number().optional(),
   lng: z.number().optional(),
   promoCode: z.string().optional(),
+  giftCardCode: z.string().optional(),
+  giftCardAmount: z.number().nonnegative().optional(),
 });
 
 const createOrderSchema = z.object({

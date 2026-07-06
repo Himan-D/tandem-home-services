@@ -1,5 +1,5 @@
 import { useAuth } from '../context/AuthContext';
-import { User, Shield, CreditCard, Bell, LogOut, ChevronRight, Settings, HelpCircle } from 'lucide-react';
+import { User, Shield, CreditCard, Bell, LogOut, ChevronRight, Settings, HelpCircle, Gift } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function Account() {
@@ -46,6 +46,10 @@ export default function Account() {
             </button>
             <button className="sidebar-link" style={{ borderRadius: 0, justifyContent: 'space-between', padding: '1rem 1.5rem' }} onClick={() => navigate('/notifications/history')}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><Bell size={20} /> Notification History</div>
+              <ChevronRight size={16} />
+            </button>
+            <button className="sidebar-link" style={{ borderRadius: 0, justifyContent: 'space-between', padding: '1rem 1.5rem' }} onClick={() => navigate('/gift-cards')}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><Gift size={20} /> Gift Cards</div>
               <ChevronRight size={16} />
             </button>
             <button className="sidebar-link" style={{ borderRadius: 0, justifyContent: 'space-between', padding: '1rem 1.5rem' }} onClick={() => navigate('/page/security')}>

@@ -1,15 +1,36 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { API_BASE } from '../config';
 
 const AuthContext = createContext();
 
 export const useAuth = () => useContext(AuthContext);
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+function getToken() {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('token');
+  }
+  return null;
+}
 
-  const fetchUserProfile = async (authToken) => {
+function setCookie(name, value, days) {
+  if (typeof window === 'undefined') return;
+  const expires = new Date(Date.now() + days * 864e5).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
+}
+
+function removeCookie(name) {
+  if (typeof window === 'undefined') return;
+  document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+}
+
+export const AuthProvider = ({ children, initialUser }) => {
+  const [user, setUser] = useState(() => {
+    if (initialUser) return initialUser;
+    return null;
+  });
+  const [token, setToken] = useState(() => getToken());
+
+  const fetchUserProfile = useCallback(async (authToken) => {
     try {
       const res = await fetch(`${API_BASE}/api/me`, {
         headers: { 'Authorization': `Bearer ${authToken}` }
@@ -18,25 +39,24 @@ export const AuthProvider = ({ children }) => {
         const data = await res.json();
         setUser(data);
       } else {
-        logout();
+        setToken(null);
       }
     } catch (e) {
       console.error("Failed to fetch user profile", e);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (token) {
+    if (token && !user) {
       fetchUserProfile(token);
-    } else {
+    } else if (!token) {
       setUser(null);
     }
-  }, [token]);
+  }, [token, user, fetchUserProfile]);
 
   const refreshUser = async () => {
-    if (token) {
-      await fetchUserProfile(token);
-    }
+    const t = token || getToken();
+    if (t) await fetchUserProfile(t);
   };
 
   const login = async (email, password) => {
@@ -45,11 +65,12 @@ export const AuthProvider = ({ children }) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    
+
     if (res.ok) {
       const data = await res.json();
       setToken(data.token);
       localStorage.setItem('token', data.token);
+      setCookie('token', data.token, 7);
       return true;
     }
     return false;
@@ -58,11 +79,14 @@ export const AuthProvider = ({ children }) => {
   const loginWithToken = (newToken) => {
     setToken(newToken);
     localStorage.setItem('token', newToken);
+    setCookie('token', newToken, 7);
   };
 
   const logout = () => {
     setToken(null);
     localStorage.removeItem('token');
+    removeCookie('token');
+    setUser(null);
   };
 
   return (

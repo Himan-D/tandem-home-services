@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { API_BASE } from '../config';
 import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { Mail, KeyRound, ArrowRight } from 'lucide-react';
 
 export default function ForgotPassword() {
@@ -32,6 +33,10 @@ export default function ForgotPassword() {
 
   return (
     <div className="container animate-fade-up" style={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Helmet>
+        <title>Forgot Password | Tandem</title>
+        <meta name="description" content="Reset your Tandem account password. Enter your email to receive a password reset code." />
+      </Helmet>
       <div className="card glass" style={{ maxWidth: '400px', width: '100%', padding: '2rem' }}>
         <h2 style={{ fontSize: '2rem', marginBottom: '0.5rem', textAlign: 'center' }}>Reset Password</h2>
         

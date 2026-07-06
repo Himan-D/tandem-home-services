@@ -1,5 +1,17 @@
 const logger = require('./lib/logger');
 
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function createMatchingEngine(prisma, io, services) {
   const { ml, onlinePartners, notifyUser } = services;
 
@@ -9,7 +21,7 @@ function createMatchingEngine(prisma, io, services) {
 
     const customer = await prisma.user.findUnique({
       where: { id: booking.customerId },
-      select: { name: true },
+      select: { name: true, lat: true, lng: true },
     });
     if (!customer) return;
 
@@ -24,7 +36,7 @@ function createMatchingEngine(prisma, io, services) {
       select: {
         id: true, name: true, ratingAvg: true, jobsCompleted: true,
         responseTimeMins: true, servicesOffered: true, location: true,
-        isPlusMember: true,
+        lat: true, lng: true, isPlusMember: true,
       },
     });
 
@@ -38,6 +50,19 @@ function createMatchingEngine(prisma, io, services) {
       if (skillsMatch === 0 && offeredServices.length > 0) continue;
 
       const online = onlinePartners.has(partner.id);
+      let distance = null;
+      let locationScore = 0.3;
+
+      if (
+        customer.lat != null && customer.lng != null &&
+        partner.lat != null && partner.lng != null
+      ) {
+        distance = haversineKm(
+          customer.lat, customer.lng,
+          partner.lat, partner.lng
+        );
+        locationScore = Math.max(1.0 - distance / 20, 0.1);
+      }
 
       candidates.push({
         pro_id: partner.id,
@@ -45,11 +70,12 @@ function createMatchingEngine(prisma, io, services) {
         jobs_completed: partner.jobsCompleted || 0,
         response_time_mins: partner.responseTimeMins || 30,
         price_score: 0.5,
-        location_score: Math.random() * 0.5 + 0.5,
+        location_score: locationScore,
         skills_match: skillsMatch,
         reliability_score: Math.min((partner.jobsCompleted || 0) / 200 + 0.5, 1.0),
         availability_score: online ? 1.0 : 0.3,
         is_plus_member: partner.isPlusMember === 1,
+        distance_km: distance ? Math.round(distance * 10) / 10 : null,
       });
     }
 
@@ -66,9 +92,19 @@ function createMatchingEngine(prisma, io, services) {
 
       await prisma.booking.update({
         where: { id: bookingId },
-        data: { status: 'accepted', partnerId: partner.id, matchScore: topMatch.score, matchedBy: 'ml_engine' },
+        data: {
+          status: 'accepted',
+          partnerId: partner.id,
+          matchScore: topMatch.score,
+          matchedBy: 'ml_engine',
+        },
       });
-      await notifyUser(booking.customerId, 'both', 'Job Matched', `${partner.name} matched to your request!`);
+
+      await notifyUser(
+        booking.customerId, 'both', 'Job Matched',
+        `${partner.name} matched to your request!`
+      );
+
       io.to(`user:${booking.customerId}`).emit('booking:updated', {
         id: bookingId,
         status: 'accepted',
@@ -76,6 +112,7 @@ function createMatchingEngine(prisma, io, services) {
         partnerName: partner.name,
         matchScore: topMatch.score,
       });
+
       io.to(`user:${partner.id}`).emit('booking:assigned', {
         id: bookingId,
         serviceTitle: booking.serviceTitle,
@@ -83,7 +120,12 @@ function createMatchingEngine(prisma, io, services) {
         location: booking.location,
         time: booking.time,
       });
-      logger.info({ bookingId, partnerId: partner.id, score: topMatch.score }, 'Booking matched');
+
+      const matchData = candidates.find((c) => c.pro_id === partner.id);
+      logger.info({
+        bookingId, partnerId: partner.id, score: topMatch.score,
+        distance: matchData?.distance_km,
+      }, 'Booking matched via ML');
     } catch (err) {
       logger.error({ err: err.message, bookingId }, 'ML ranking failed, using fallback');
       const fallback = allPartners.find((p) => {
@@ -97,12 +139,12 @@ function createMatchingEngine(prisma, io, services) {
           where: { id: bookingId },
           data: { status: 'accepted', partnerId: fallback.id, matchedBy: 'fallback' },
         });
-        await notifyUser(booking.customerId, 'both', 'Job Matched', `${fallback.name} matched to your request!`);
+        await notifyUser(
+          booking.customerId, 'both', 'Job Matched',
+          `${fallback.name} matched to your request!`
+        );
         io.to(`user:${booking.customerId}`).emit('booking:updated', {
-          id: bookingId,
-          status: 'accepted',
-          partnerId: fallback.id,
-          partnerName: fallback.name,
+          id: bookingId, status: 'accepted', partnerId: fallback.id, partnerName: fallback.name,
         });
       }
     }

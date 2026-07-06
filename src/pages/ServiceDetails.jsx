@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { API_BASE } from '../config';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
+import { useData } from '../context/DataContext';
 import { ChevronLeft, Star, Shield, Clock, Check, Plus, ChevronRight } from 'lucide-react';
 
 // Mock sub-services for each category to simulate a robust listing
@@ -23,17 +25,22 @@ const subServicesMock = {
 export default function ServiceDetails() {
   const { serviceId } = useParams();
   const navigate = useNavigate();
-  const [service, setService] = useState(null);
+  const ssrData = useData();
+  const ssrService = ssrData?.service?.id === serviceId ? ssrData.service : null;
+  const [service, setService] = useState(ssrService);
   const [cart, setCart] = useState([]);
   const [reviewsData, setReviewsData] = useState({ average: null, count: 0, reviews: [] });
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/services`)
-      .then(res => res.json())
-      .then(data => {
-        const found = data.find(s => s.id === serviceId);
-        setService(found);
-      });
+    const hasData = ssrService && !ssrService._fetchedReviews;
+    if (!hasData) {
+      fetch(`${API_BASE}/api/services`)
+        .then(res => res.json())
+        .then(data => {
+          const found = data.find(s => s.id === serviceId);
+          setService(found);
+        });
+    }
     fetch(`${API_BASE}/api/services/${serviceId}/reviews?limit=10`)
       .then(res => res.ok ? res.json() : null)
       .then(data => { if (data) setReviewsData(data); })
@@ -58,10 +65,43 @@ export default function ServiceDetails() {
 
   const totalCart = cart.reduce((sum, item) => sum + item.price, 0);
 
-  if (!service) return <div className="container" style={{ padding: '6rem 0' }}>Loading...</div>;
+  if (!service) return (
+    <div className="container" style={{ padding: '6rem 0' }}>
+      <Helmet>
+        <title>Service Details | Tandem</title>
+        <meta name="description" content="Book professional home services on demand." />
+      </Helmet>
+      Loading...
+    </div>
+  );
+
+  const serviceTitle = service.title || serviceId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const serviceDesc = `Book professional ${serviceTitle.toLowerCase()} services on demand. Transparent pricing, vetted professionals, instant booking.`;
 
   return (
     <div style={{ background: 'var(--bg-body)', minHeight: '100vh', paddingBottom: '100px' }}>
+      <Helmet>
+        <title>{serviceTitle} | Tandem</title>
+        <meta name="description" content={serviceDesc} />
+        <meta property="og:title" content={`${serviceTitle} | Tandem`} />
+        <meta property="og:description" content={serviceDesc} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={`https://tandem.com/service/${serviceId}`} />
+        <meta property="og:image" content="https://tandem.com/og-image.png" />
+        <meta property="twitter:card" content="summary_large_image" />
+        <meta property="twitter:title" content={`${serviceTitle} | Tandem`} />
+        <meta property="twitter:description" content={serviceDesc} />
+        <link rel="canonical" href={`https://tandem.com/service/${serviceId}`} />
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Service",
+          "name": serviceTitle,
+          "provider": { "@type": "Organization", "name": "Tandem" },
+          "description": serviceDesc,
+          "offers": { "@type": "Offer", "price": service.basePrice, "priceCurrency": "USD" },
+          "areaServed": ["New York", "Los Angeles", "Chicago"]
+        })}</script>
+      </Helmet>
       {/* Header Banner */}
       <div style={{ background: 'var(--text-main)', color: 'white', padding: '6rem 0 3rem' }}>
         <div className="container">

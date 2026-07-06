@@ -64,6 +64,7 @@ module.exports = function (prisma, io, services) {
    *       400: { description: Invalid credentials }
    */
   router.post('/login', rateLimit(authLimiter), validate(loginSchema), asyncHandler(async (req, res) => {
+    if (req.body.website) return res.status(400).json({ error: 'Invalid request' });
     const { email, password } = req.body;
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return res.status(400).json({ error: 'User not found' });
@@ -72,7 +73,7 @@ module.exports = function (prisma, io, services) {
     }
     const token = signToken(user);
     const { refreshToken } = await persistRefreshToken(prisma, user.id);
-    res.json({ token, refreshToken, user: { id: user.id, name: user.name, role: user.role } });
+    res.json({ token, refreshToken, user: { id: user.id, name: user.name, role: user.role, emailVerified: !!user.email_verified } });
   }));
 
   /**
@@ -98,6 +99,7 @@ module.exports = function (prisma, io, services) {
    *       400: { description: Email already exists }
    */
   router.post('/register', rateLimit(authLimiter), validate(registerSchema), asyncHandler(async (req, res) => {
+    if (req.body.website) return res.status(400).json({ error: 'Invalid request' });
     const { name, email, password, role } = req.body;
     try {
       const hash = await bcrypt.hash(password, 10);
@@ -105,7 +107,16 @@ module.exports = function (prisma, io, services) {
         data: { name, email, password: hash, role },
         select: { id: true, name: true, role: true },
       });
-      await notifyUser(user.id, 'email', 'Welcome to Lumina', 'Your account is ready.');
+      const crypto = require('crypto');
+      const vToken = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const config = require('../config');
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO verification_tokens (user_id, token, type, expires_at) VALUES ($1, $2, 'email', $3) ON CONFLICT (user_id, type) DO UPDATE SET token = EXCLUDED.token, expires_at = EXCLUDED.expires_at, used = 0`,
+        user.id, vToken, expiresAt
+      );
+      const verifyUrl = `${config.corsOrigin[0] || 'http://localhost:5173'}/verify-email?token=${vToken}`;
+      await notifyUser(user.id, 'email', 'Verify Your Email', `Welcome to Tandem! Click to verify your email: ${verifyUrl}`);
       const token = signToken(user);
       const { refreshToken } = await persistRefreshToken(prisma, user.id);
       res.status(201).json({ token, refreshToken, user });
@@ -149,7 +160,7 @@ module.exports = function (prisma, io, services) {
       data: { used: 1 },
     });
     const { refreshToken } = await persistRefreshToken(prisma, user.id);
-    res.json({ token: signToken(user), refreshToken, user: { id: user.id, name: user.name, role: user.role } });
+    res.json({ token: signToken(user), refreshToken, user: { id: user.id, name: user.name, role: user.role, emailVerified: !!user.email_verified } });
   }));
 
   router.post('/forgot-password', rateLimit(authLimiter), asyncHandler(async (req, res) => {

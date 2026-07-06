@@ -9,7 +9,7 @@ module.exports = function (prisma, io, services) {
   const { notifyUser, matchBooking, ml } = services;
 
   router.post('/', authenticateToken, validate(createBookingSchema), asyncHandler(async (req, res) => {
-    const { serviceId, location, time, amount, walletDeduction, preferredPartnerId, lat, lng, promoCode } = req.body;
+    const { serviceId, location, time, amount, walletDeduction, preferredPartnerId, lat, lng, promoCode, giftCardCode, giftCardAmount } = req.body;
 
     let discountPercent = 0;
     if (promoCode) {
@@ -47,6 +47,43 @@ module.exports = function (prisma, io, services) {
         where: { id: req.user.id },
         data: { walletBalance: { decrement: walletDeduction } },
       });
+    }
+
+    if (giftCardCode) {
+      const cards = await prisma.$queryRawUnsafe(
+        `SELECT id, remaining_balance, status, expires_at FROM gift_cards WHERE code = $1`,
+        giftCardCode.toUpperCase()
+      );
+      if (cards.length === 0) return res.status(400).json({ error: 'Gift card not found' });
+      const card = cards[0];
+      if (card.status === 'expired' || new Date(card.expires_at) < new Date()) {
+        return res.status(400).json({ error: 'Gift card has expired' });
+      }
+      if (card.remaining_balance <= 0) {
+        return res.status(400).json({ error: 'Gift card has no remaining balance' });
+      }
+      const deductAmount = Math.min(giftCardAmount || 0, card.remaining_balance);
+      if (deductAmount <= 0) {
+        return res.status(400).json({ error: 'Gift card amount required' });
+      }
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO gift_card_redemptions (gift_card_id, booking_id, amount, redeemed_by)
+         VALUES ($1, $2, $3, $4)`,
+        card.id, jobId, deductAmount, req.user.id
+      );
+      const newBalance = card.remaining_balance - deductAmount;
+      const newStatus = newBalance <= 0 ? 'redeemed' : 'partially_redeemed';
+      if (newStatus === 'redeemed') {
+        await prisma.$executeRawUnsafe(
+          `UPDATE gift_cards SET remaining_balance = $1, status = $2, redeemed_at = NOW() WHERE id = $3`,
+          newBalance, newStatus, card.id
+        );
+      } else {
+        await prisma.$executeRawUnsafe(
+          `UPDATE gift_cards SET remaining_balance = $1, status = $2 WHERE id = $3`,
+          newBalance, newStatus, card.id
+        );
+      }
     }
 
     const svc = await prisma.service.findUnique({ where: { id: String(serviceId) } });
@@ -189,10 +226,39 @@ module.exports = function (prisma, io, services) {
     res.json({ success: true });
   }));
 
+  router.post('/:id/rebook', authenticateToken, asyncHandler(async (req, res) => {
+    const prev = await prisma.booking.findFirst({
+      where: { id: req.params.id, customerId: req.user.id },
+    });
+    if (!prev) return res.status(404).json({ error: 'Previous booking not found' });
+    const jobId = `job_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const booking = await prisma.booking.create({
+      data: {
+        id: jobId,
+        serviceId: prev.serviceId,
+        serviceTitle: prev.serviceTitle,
+        customerId: req.user.id,
+        location: prev.location,
+        lat: prev.lat,
+        lng: prev.lng,
+        time: prev.time,
+        payout: prev.payout,
+        status: 'pending',
+      },
+    });
+    await notifyUser(req.user.id, 'in_app', 'Booking Confirmed', `Rebooked ${prev.serviceTitle}`, { bookingId: jobId });
+    res.status(201).json({ id: jobId, serviceId: prev.serviceId, location: prev.location, payout: prev.payout, status: 'pending' });
+    setTimeout(() => matchBooking(jobId), 2000);
+  }));
+
   router.post('/:id/complaint', authenticateToken, validate(complaintSchema), asyncHandler(async (req, res) => {
     const { bookingId, reason, description } = req.body;
     await prisma.complaint.create({
       data: { bookingId, customerId: req.user.id, reason, description },
+    });
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      select: { partnerId: true },
     });
     const admin = await prisma.user.findFirst({
       where: { role: 'admin' },
@@ -200,6 +266,10 @@ module.exports = function (prisma, io, services) {
     });
     if (admin) {
       await notifyUser(admin.id, 'email', 'New Complaint', `Complaint for job ${bookingId}: ${reason}`, { bookingId });
+    }
+    if (booking.partnerId) {
+      await notifyUser(booking.partnerId, 'in_app', 'New Complaint',
+        `A complaint has been filed for job ${bookingId}. We'll review it shortly.`, { bookingId });
     }
     res.json({ success: true });
   }));

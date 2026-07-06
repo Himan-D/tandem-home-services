@@ -4,6 +4,7 @@ import { Star, CheckCircle, MapPin, Calendar, AlertTriangle } from 'lucide-react
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { API_BASE } from '../config';
+import QuickRebook from '../components/QuickRebook';
 
 export default function ConsumerDashboard() {
   const navigate = useNavigate();
@@ -187,7 +188,8 @@ export default function ConsumerDashboard() {
                     </div>
                   )}
                   {job.status === 'completed' && (
-                    <div style={{ marginTop: '1rem' }}>
+                    <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                      <QuickRebook bookingId={job.id} serviceId={job.service_id} />
                       <button className="btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => setComplaintTarget(job.id)}>
                         Report Issue
                       </button>

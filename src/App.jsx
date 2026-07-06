@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import Navbar from './components/Navbar';
 import AIAssistant from './components/AIAssistant';
@@ -26,6 +26,7 @@ const AdminPartners = lazy(() => import('./pages/AdminPartners'));
 const AdminCustomers = lazy(() => import('./pages/AdminCustomers'));
 const AdminOrders = lazy(() => import('./pages/AdminOrders'));
 const AdminPayouts = lazy(() => import('./pages/AdminPayouts'));
+const AdminDisputes = lazy(() => import('./pages/AdminDisputes'));
 const NotificationHistory = lazy(() => import('./pages/NotificationHistory'));
 const Login = lazy(() => import('./pages/Login'));
 const Signup = lazy(() => import('./pages/Signup'));
@@ -39,6 +40,8 @@ const TandemPlus = lazy(() => import('./pages/TandemPlus'));
 const BookingStatus = lazy(() => import('./pages/BookingStatus'));
 const ServiceDetails = lazy(() => import('./pages/ServiceDetails'));
 const Account = lazy(() => import('./pages/Account'));
+const GiftCards = lazy(() => import('./pages/GiftCards'));
+const PartnerDisputes = lazy(() => import('./pages/PartnerDisputes'));
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'));
 
 const PageFallback = () => (
@@ -62,11 +65,10 @@ function ProtectedRoute({ children, allowedRoles }) {
   return children;
 }
 
-export default function App() {
+export default function App({ userFromSSR }) {
   return (
-    <AuthProvider>
+    <AuthProvider initialUser={userFromSSR}>
       <SocketProvider>
-      <BrowserRouter>
         <UnreadBadge>
         <ErrorBoundary>
           <Navbar />
@@ -160,16 +162,24 @@ export default function App() {
               </ProtectedRoute>
             } 
           />
-          <Route 
-            path="/partner/profile" 
+          <Route
+            path="/partner/profile"
             element={
               <ProtectedRoute allowedRoles={['partner', 'admin']}>
                 <PartnerProfile />
               </ProtectedRoute>
-            } 
+            }
           />
-          <Route 
-            path="/partner/job/:jobId" 
+          <Route
+            path="/partner/disputes"
+            element={
+              <ProtectedRoute allowedRoles={['partner', 'admin']}>
+                <PartnerDisputes />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/partner/job/:jobId"
             element={
               <ProtectedRoute allowedRoles={['partner', 'admin']}>
                 <JobNavigation />
@@ -209,6 +219,7 @@ export default function App() {
           <Route path="/admin/customers" element={<ProtectedRoute allowedRoles={['admin']}><AdminCustomers /></ProtectedRoute>} />
           <Route path="/admin/orders" element={<ProtectedRoute allowedRoles={['admin']}><AdminOrders /></ProtectedRoute>} />
           <Route path="/admin/payouts" element={<ProtectedRoute allowedRoles={['admin']}><AdminPayouts /></ProtectedRoute>} />
+          <Route path="/admin/disputes" element={<ProtectedRoute allowedRoles={['admin']}><AdminDisputes /></ProtectedRoute>} />
           <Route 
             path="/notifications/history" 
             element={
@@ -233,6 +244,14 @@ export default function App() {
               </ProtectedRoute>
             } 
           />
+          <Route 
+            path="/gift-cards" 
+            element={
+              <ProtectedRoute allowedRoles={['consumer', 'admin']}>
+                <GiftCards />
+              </ProtectedRoute>
+            } 
+          />
           <Route path="/page/:pageId" element={<PlaceholderPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -241,7 +260,6 @@ export default function App() {
         <ConsumerBottomNav />
         </ErrorBoundary>
         </UnreadBadge>
-      </BrowserRouter>
       </SocketProvider>
     </AuthProvider>
   );

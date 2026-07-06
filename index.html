@@ -7,6 +7,7 @@
     <meta name="theme-color" content="#05ac5f" />
     <link rel="manifest" href="/manifest.json" />
     <title>Tandem | On-Demand Home Services</title>
+    <meta name="description" content="Book trusted, vetted professionals for cleaning, plumbing, AC repair, and more. Transparent pricing, instant booking." />
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
@@ -16,7 +17,7 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <div id="root"><!--ssr-outlet--></div>
+    <script type="module" src="/src/entry-client.jsx"></script>
   </body>
 </html>

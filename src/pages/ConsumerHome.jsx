@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Shield, Sparkles, Clock, CheckCircle, ChevronRight, Home, Wrench, Droplet, Zap, Bug, Scissors } from 'lucide-react';
+import { Helmet } from 'react-helmet-async';
+import { Shield, Sparkles, Clock, CheckCircle, ChevronRight, Home, Wrench, Droplet, Zap, Bug, Scissors, DollarSign } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 import { API_BASE } from '../config';
+import PriceEstimator from '../components/PriceEstimator';
 
 function LoadingSkeleton() {
   return (
@@ -16,11 +19,13 @@ function LoadingSkeleton() {
 
 export default function ConsumerHome() {
   const { user } = useAuth();
-  const [services, setServices] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const ssrData = useData();
+  const [services, setServices] = useState(() => ssrData?.services || []);
+  const [loading, setLoading] = useState(() => !ssrData?.services);
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (ssrData?.services) return;
     fetch(`${API_BASE}/api/services`)
       .then(res => res.json())
       .then(data => { setServices(data); setLoading(false); })
@@ -41,6 +46,28 @@ export default function ConsumerHome() {
 
   return (
     <div>
+      <Helmet>
+        <title>Tandem | On-Demand Home Services</title>
+        <meta name="description" content="Book trusted, vetted professionals for cleaning, plumbing, AC repair, and more. Transparent pricing, instant booking." />
+        <meta property="og:title" content="Tandem | On-Demand Home Services" />
+        <meta property="og:description" content="Book trusted, vetted professionals for cleaning, plumbing, AC repair, and more." />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://tandem.com" />
+        <meta property="og:image" content="https://tandem.com/og-image.png" />
+        <meta property="twitter:card" content="summary_large_image" />
+        <meta property="twitter:title" content="Tandem | On-Demand Home Services" />
+        <meta property="twitter:description" content="Book trusted, vetted professionals for cleaning, plumbing, AC repair, and more." />
+        <link rel="canonical" href="https://tandem.com" />
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Organization",
+          "name": "Tandem",
+          "url": "https://tandem.com",
+          "description": "On-demand home services marketplace",
+          "areaServed": ["New York", "Los Angeles", "Chicago"],
+          "serviceType": ["Cleaning", "Plumbing", "Electrical", "Pest Control", "Painting", "Handyman"]
+        })}</script>
+      </Helmet>
       {/* Hero Section */}
       <section id="why-us" className="hero" style={{ background: 'linear-gradient(135deg, var(--bg-body) 0%, var(--primary-bg) 100%)', padding: '6rem 0 4rem', textAlign: 'center' }}>
         <div className="container">
@@ -78,9 +105,14 @@ export default function ConsumerHome() {
               <h3 style={{ fontSize: '1.5rem' }}>{service.title}</h3>
               <p style={{ color: 'var(--text-muted)' }}>Professional {service.title.toLowerCase()} by vetted experts. Satisfaction guaranteed.</p>
               
-              <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
-                <span style={{ fontWeight: 600, fontSize: '1.125rem' }}>From ${service.basePrice}</span>
-                <Link to={`/service/${service.id}`} className="btn-primary" style={{ padding: '0.5rem 1rem' }}>View Details <ChevronRight size={16} /></Link>
+              <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontWeight: 600, fontSize: '1.125rem' }}>From ${service.basePrice}</span>
+                  <Link to={`/service/${service.id}`} className="btn-primary" style={{ padding: '0.5rem 1rem' }}>View Details <ChevronRight size={16} /></Link>
+                </div>
+                <div style={{ marginTop: '0.5rem' }}>
+                  <PriceEstimator serviceId={service.id} />
+                </div>
               </div>
             </div>
           ))}

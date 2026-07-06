@@ -23,6 +23,33 @@ const updateServiceSchema = z.object({
 module.exports = function (prisma) {
   const router = express.Router();
 
+  router.get('/estimate', asyncHandler(async (req, res) => {
+    const { serviceId, lat, lng } = req.query;
+    if (!serviceId) return res.status(400).json({ error: 'serviceId required' });
+    const service = await prisma.service.findUnique({ where: { id: String(serviceId) } });
+    if (!service) return res.status(404).json({ error: 'Service not found' });
+    let priceZone = 1.0;
+    if (lat && lng) {
+      const areas = await prisma.$queryRawUnsafe(
+        `SELECT price_zone FROM service_areas WHERE is_active = 1 AND ST_Contains(boundary, ST_SetSRID(ST_MakePoint($1, $2), 4326)) LIMIT 1`,
+        parseFloat(lng), parseFloat(lat)
+      );
+      if (areas.length > 0) priceZone = areas[0].price_zone;
+    }
+    const base = service.basePrice;
+    const estimated = Math.round(base * priceZone);
+    res.json({
+      serviceId: service.id,
+      serviceTitle: service.title,
+      basePrice: base,
+      priceZone,
+      estimatedPrice: estimated,
+      rangeLow: estimated,
+      rangeHigh: Math.round(estimated * 1.3),
+      currency: 'USD',
+    });
+  }));
+
   router.get('/', asyncHandler(async (req, res) => {
     const { category, active } = req.query;
     const where = {};

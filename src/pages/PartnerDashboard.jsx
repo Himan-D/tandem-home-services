@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Briefcase, DollarSign, Calendar, Settings, Bell, CheckCircle, XCircle, MapPin, User, LogOut, TrendingUp, Navigation } from 'lucide-react';
+import { Briefcase, DollarSign, Calendar, Settings, Bell, CheckCircle, XCircle, MapPin, User, LogOut, TrendingUp, Navigation, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { API_BASE } from '../config';
@@ -191,6 +191,7 @@ export default function PartnerDashboard({ initialView }) {
           <button onClick={() => navigate('/partner/shifts')} className="sidebar-link" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><Calendar size={20} /> Shift Schedule</button>
           <button onClick={() => navigate('/partner/notifications')} className="sidebar-link" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><Bell size={20} /> Notifications</button>
           <button onClick={() => navigate('/partner/profile')} className="sidebar-link" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><User size={20} /> Profile</button>
+          <button onClick={() => navigate('/partner/disputes')} className="sidebar-link" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><AlertCircle size={20} /> Disputes</button>
         </nav>
         <div style={{ marginTop: 'auto' }}>
           <button onClick={handleLogout} className="sidebar-link" style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer' }}>

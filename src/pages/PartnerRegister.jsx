@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { API_BASE } from '../config';
 import { Briefcase, ChevronRight, Check, User, Phone, MapPin, ShieldCheck, ArrowLeft } from 'lucide-react';
 
 export default function PartnerRegister() {
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', location: '', lat: '', lng: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', location: '', lat: '', lng: '', backgroundConsent: false });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -59,6 +60,12 @@ export default function PartnerRegister() {
 
   return (
     <div className="container" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+      <Helmet>
+        <title>Become a Pro | Tandem</title>
+        <meta name="description" content="Join Tandem as a service professional. Grow your business with instant bookings, transparent pricing, and vetted customers." />
+        <meta property="og:title" content="Become a Pro | Tandem" />
+        <meta property="og:description" content="Join Tandem as a service professional and grow your business." />
+      </Helmet>
       <div className="card glass animate-fade-up" style={{ maxWidth: '560px', width: '100%', padding: '2.5rem' }}>
 
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
@@ -143,10 +150,20 @@ export default function PartnerRegister() {
                   <input className="input" type="number" step="any" value={form.lng} onChange={e => update('lng', e.target.value)} placeholder="-73.9442" />
                 </div>
               </div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '1rem', background: 'var(--bg-hover)', borderRadius: 'var(--radius-md)' }}>
+                <input type="checkbox" id="bg-consent-reg" checked={form.backgroundConsent}
+                  onChange={(e) => update('backgroundConsent', e.target.checked)}
+                  style={{ width: '1.2rem', height: '1.2rem', marginTop: '0.15rem', cursor: 'pointer' }}
+                />
+                <label htmlFor="bg-consent-reg" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                  I consent to a background check as part of the Tandem partner verification process.
+                  I understand that a consumer report may be obtained.
+                </label>
+              </div>
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <button className="btn-outline" onClick={() => setStep(1)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ArrowLeft size={18} /> Back</button>
                 <button className="btn-primary" style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}
-                  onClick={() => { if (!form.phone || !form.location) { setError('Phone and location are required'); return; } handleRegister(); }}
+                  onClick={() => { if (!form.phone || !form.location) { setError('Phone and location are required'); return; } if (!form.backgroundConsent) { setError('You must consent to the background check'); return; } handleRegister(); }}
                   disabled={loading}>
                   {loading ? 'Creating...' : 'Create Account'} <ChevronRight size={18} />
                 </button>

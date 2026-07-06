@@ -235,6 +235,24 @@ function sosAlert(name, details) {
   `);
 }
 
+function giftCardReceived(name, details) {
+  return baseHtml(`
+    <h2 style="margin:0 0 8px;font-size:18px;color:#111827">You received a gift card!</h2>
+    <p>Hi ${name},</p>
+    <p>${details.from} has sent you a Tandem gift card!</p>
+    <div style="text-align:center;margin:24px 0;padding:24px;background:linear-gradient(135deg,#05ac5f,#047545);border-radius:12px;color:#fff">
+      <div style="font-size:14px;opacity:0.9;margin-bottom:8px">Tandem Gift Card</div>
+      <div style="font-size:40px;font-weight:700;margin-bottom:4px">$${details.amount}</div>
+      ${details.message ? `<div style="font-size:14px;opacity:0.9;margin-top:8px;font-style:italic">"${details.message}"</div>` : ''}
+      <div style="font-size:12px;opacity:0.7;margin-top:12px">Code: ${details.code}</div>
+    </div>
+    <p>Use this gift card on your next home service booking. Just enter the code at checkout.</p>
+    <div style="text-align:center;margin:24px 0">
+      <a href="${process.env.CORS_ORIGIN?.split(',')[0] || 'http://localhost:5173'}/dashboard" class="btn">Book a Service</a>
+    </div>
+  `);
+}
+
 function general(name, title, message) {
   return baseHtml(`
     <h2 style="margin:0 0 8px;font-size:18px;color:#111827">${title}</h2>
@@ -312,6 +330,18 @@ function render(title, message, userName) {
   }
 
   if (title === 'SOS Alert') return sosAlert(name, { userId: '', bookingId: '', location: '' });
+
+  if (title === 'Gift Card Received') {
+    const amountMatch = message?.match(/\$(\d+\.?\d*)/);
+    const fromMatch = message?.match(/from (.+?)!/);
+    const codeMatch = message?.match(/Code: ([A-Z0-9-]+)/);
+    return giftCardReceived(name, {
+      amount: amountMatch?.[1] || '0',
+      from: fromMatch?.[1] || 'a friend',
+      code: codeMatch?.[1] || '',
+      message: '',
+    });
+  }
 
   return general(name, title, message);
 }

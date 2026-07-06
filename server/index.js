@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
 const webPush = require('web-push');
@@ -25,6 +26,7 @@ const { setupSecurity, auditLog, requestId } = require('./middleware/security');
 const { liveness, readiness } = require('./middleware/health');
 const { setupSwagger } = require('./swagger');
 const { ShiftManager } = require('./services/shifts');
+const { trainAllModels } = require('./lib/ml-training');
 
 async function boot() {
   await connect();
@@ -105,6 +107,16 @@ async function boot() {
     'Service Complete!': 'bookings',
     'Payout Requested': 'payouts',
     'SOS Alert': 'sos',
+    'Gift Card Received': 'account',
+    'Gift Card Purchased': 'account',
+    'Partner Responded': 'bookings',
+    'Customer Follow-up': 'bookings',
+    'Dispute Resolved': 'bookings',
+    'Background Check Needed': 'account',
+    'Background Check In Progress': 'account',
+    'Background Check Cleared': 'account',
+    'Background Check Needs Review': 'account',
+    'Background Check Dispute': 'account',
   };
 
   function inferCategory(title) {
@@ -260,10 +272,44 @@ async function boot() {
   app.use('/api/push-subscriptions', require('./routes/push-subscriptions')(prisma));
   app.use('/api/notifications', require('./routes/notifications')(prisma));
   app.use('/api/email', require('./routes/email-unsubscribe')(prisma));
+  app.use('/api/verification', require('./routes/verification')(prisma, io, sharedServices));
+  app.use('/api/addresses', require('./routes/addresses')(prisma));
+  app.use('/api/gift-cards', require('./routes/gift-cards')(prisma, io, sharedServices));
+  app.use('/api/disputes', require('./routes/disputes')(prisma, io, sharedServices));
+  app.use('/api/background-checks', require('./routes/background-checks')(prisma, io, sharedServices));
+  app.use('/api/ml', require('./routes/ml-pricing')(prisma, ml));
 
   app.get('/health', liveness);
   app.get('/healthz', liveness);
   app.get('/readyz', readiness);
+
+  app.get('/robots.txt', (_req, res) => {
+    res.type('text/plain').send('User-agent: *\nAllow: /\nSitemap: https://tandem.com/sitemap.xml');
+  });
+
+  app.get('/sitemap.xml', async (_req, res) => {
+    try {
+      const services = await prisma.service.findMany({ select: { id: true } });
+      const serviceUrls = services.map(s => `  <url><loc>https://tandem.com/service/${s.id}</loc></url>`).join('\n');
+      res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://tandem.com/</loc></url>
+  <url><loc>https://tandem.com/login</loc></url>
+  <url><loc>https://tandem.com/signup</loc></url>
+  <url><loc>https://tandem.com/partner/register</loc></url>
+${serviceUrls}
+</urlset>`);
+    } catch {
+      res.type('application/xml').status(500).send('<error>Failed to generate sitemap</error>');
+    }
+  });
+
+  if (config.nodeEnv === 'production') {
+    const { ssrMiddleware, loadProductionBundle } = require('./ssr');
+    loadProductionBundle();
+    app.use(express.static(path.resolve(__dirname, '../dist'), { index: false }));
+    app.get('*', ssrMiddleware);
+  }
 
   app.use(notFound);
   app.use(errorHandler);
@@ -273,6 +319,7 @@ async function boot() {
       { port: config.port, env: config.nodeEnv, redis: !!pub, osrm: config.osrm.url },
       'Lumina server running'
     );
+    trainAllModels(prisma, ml);
   });
 
   process.on('SIGTERM', async () => {
