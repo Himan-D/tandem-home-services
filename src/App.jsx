@@ -6,12 +6,27 @@ import AIAssistant from './components/AIAssistant';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import ConsumerBottomNav from './components/ConsumerBottomNav';
+import UnreadBadge from './components/UnreadBadge';
 
 const ConsumerHome = lazy(() => import('./pages/ConsumerHome'));
 const ConsumerBooking = lazy(() => import('./pages/ConsumerBooking'));
+const PartnerRegister = lazy(() => import('./pages/PartnerRegister'));
 const PartnerDashboard = lazy(() => import('./pages/PartnerDashboard'));
+const PartnerShifts = lazy(() => import('./pages/PartnerShifts'));
+const PartnerPayouts = lazy(() => import('./pages/PartnerPayouts'));
+const PartnerNotifications = lazy(() => import('./pages/PartnerNotifications'));
+const PartnerProfile = lazy(() => import('./pages/PartnerProfile'));
 const ConsumerDashboard = lazy(() => import('./pages/ConsumerDashboard'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const AdminServices = lazy(() => import('./pages/AdminServices'));
+const AdminPromos = lazy(() => import('./pages/AdminPromos'));
+const AdminDarkStores = lazy(() => import('./pages/AdminDarkStores'));
+const AdminServiceAreas = lazy(() => import('./pages/AdminServiceAreas'));
+const AdminPartners = lazy(() => import('./pages/AdminPartners'));
+const AdminCustomers = lazy(() => import('./pages/AdminCustomers'));
+const AdminOrders = lazy(() => import('./pages/AdminOrders'));
+const AdminPayouts = lazy(() => import('./pages/AdminPayouts'));
+const NotificationHistory = lazy(() => import('./pages/NotificationHistory'));
 const Login = lazy(() => import('./pages/Login'));
 const Signup = lazy(() => import('./pages/Signup'));
 const MagicLink = lazy(() => import('./pages/MagicLink'));
@@ -52,6 +67,7 @@ export default function App() {
     <AuthProvider>
       <SocketProvider>
       <BrowserRouter>
+        <UnreadBadge>
         <ErrorBoundary>
           <Navbar />
         <Suspense fallback={<PageFallback />}>
@@ -59,6 +75,7 @@ export default function App() {
           <Route path="/" element={<ConsumerHome />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/partner/register" element={<PartnerRegister />} />
           <Route path="/magic-link" element={<MagicLink />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
@@ -120,6 +137,38 @@ export default function App() {
             } 
           />
           <Route 
+            path="/partner/shifts" 
+            element={
+              <ProtectedRoute allowedRoles={['partner', 'admin']}>
+                <PartnerShifts />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/partner/payouts" 
+            element={
+              <ProtectedRoute allowedRoles={['partner', 'admin']}>
+                <PartnerPayouts />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/partner/notifications" 
+            element={
+              <ProtectedRoute allowedRoles={['partner', 'admin']}>
+                <PartnerNotifications />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/partner/profile" 
+            element={
+              <ProtectedRoute allowedRoles={['partner', 'admin']}>
+                <PartnerProfile />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
             path="/partner/job/:jobId" 
             element={
               <ProtectedRoute allowedRoles={['partner', 'admin']}>
@@ -152,6 +201,30 @@ export default function App() {
             } 
           />
           <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/services" element={<ProtectedRoute allowedRoles={['admin']}><AdminServices /></ProtectedRoute>} />
+          <Route path="/admin/promos" element={<ProtectedRoute allowedRoles={['admin']}><AdminPromos /></ProtectedRoute>} />
+          <Route path="/admin/dark-stores" element={<ProtectedRoute allowedRoles={['admin']}><AdminDarkStores /></ProtectedRoute>} />
+          <Route path="/admin/service-areas" element={<ProtectedRoute allowedRoles={['admin']}><AdminServiceAreas /></ProtectedRoute>} />
+          <Route path="/admin/partners" element={<ProtectedRoute allowedRoles={['admin']}><AdminPartners /></ProtectedRoute>} />
+          <Route path="/admin/customers" element={<ProtectedRoute allowedRoles={['admin']}><AdminCustomers /></ProtectedRoute>} />
+          <Route path="/admin/orders" element={<ProtectedRoute allowedRoles={['admin']}><AdminOrders /></ProtectedRoute>} />
+          <Route path="/admin/payouts" element={<ProtectedRoute allowedRoles={['admin']}><AdminPayouts /></ProtectedRoute>} />
+          <Route 
+            path="/notifications/history" 
+            element={
+              <ProtectedRoute allowedRoles={['consumer', 'partner', 'admin']}>
+                <NotificationHistory />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/account/notifications" 
+            element={
+              <ProtectedRoute allowedRoles={['consumer']}>
+                <ConsumerNotifications />
+              </ProtectedRoute>
+            } 
+          />
           <Route 
             path="/account" 
             element={
@@ -167,6 +240,7 @@ export default function App() {
         <AIAssistant />
         <ConsumerBottomNav />
         </ErrorBoundary>
+        </UnreadBadge>
       </BrowserRouter>
       </SocketProvider>
     </AuthProvider>

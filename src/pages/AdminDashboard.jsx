@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '../config';
-import { Users, LayoutDashboard, DollarSign, Activity, AlertCircle, LogOut, Briefcase, MapPin } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Users, LayoutDashboard, DollarSign, Activity, AlertCircle, LogOut, Briefcase, MapPin, Tag, Warehouse, ClipboardList } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function AdminDashboard() {
@@ -46,12 +46,14 @@ export default function AdminDashboard() {
           <span style={{ color: 'var(--primary)' }}>Tandem</span>Admin
         </div>
         <nav className="sidebar-nav">
-          <Link to="/admin" className="sidebar-link active"><LayoutDashboard size={20} /> Overview</Link>
-          <Link to="#" className="sidebar-link"><Briefcase size={20} /> Services</Link>
-          <Link to="#" className="sidebar-link"><Users size={20} /> Pro Management</Link>
-          <Link to="#" className="sidebar-link"><AlertCircle size={20} /> Complaints {complaints.filter(c => c.status === 'open').length > 0 && <span className="badge" style={{ background: 'var(--danger)', color: 'white' }}>{complaints.filter(c => c.status === 'open').length}</span>}</Link>
-          <Link to="#" className="sidebar-link"><Activity size={20} /> Live Ops</Link>
-          <Link to="#" className="sidebar-link"><DollarSign size={20} /> Finance</Link>
+          <button onClick={() => navigate('/admin')} className="sidebar-link active" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><LayoutDashboard size={20} /> Overview</button>
+          <button onClick={() => navigate('/admin/services')} className="sidebar-link" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><Briefcase size={20} /> Services</button>
+          <button onClick={() => navigate('/admin/promos')} className="sidebar-link" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><Tag size={20} /> Promo Codes</button>
+          <button onClick={() => navigate('/admin/dark-stores')} className="sidebar-link" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><Warehouse size={20} /> Dark Stores</button>
+          <button onClick={() => navigate('/admin/service-areas')} className="sidebar-link" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><MapPin size={20} /> Service Areas</button>
+          <button onClick={() => navigate('/admin/partners')} className="sidebar-link" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><Users size={20} /> Partners</button>
+          <button onClick={() => navigate('/admin/customers')} className="sidebar-link" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><Users size={20} /> Customers</button>
+          <button onClick={() => navigate('/admin/orders')} className="sidebar-link" style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}><ClipboardList size={20} /> Orders</button>
         </nav>
         <div style={{ marginTop: 'auto' }}>
           <button onClick={handleLogout} className="sidebar-link" style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -146,12 +148,13 @@ export default function AdminDashboard() {
           <div className="animate-fade-up card glass">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Briefcase size={20} /> Platform Services</h3>
+              <button className="btn-primary" onClick={() => navigate('/admin/services')} style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}>Manage</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {services.length === 0 ? (
-                <p style={{ color: 'var(--text-muted)' }}>No services created yet. Use the API to add services.</p>
+                <p style={{ color: 'var(--text-muted)' }}>No services created yet.</p>
               ) : (
-                services.map(s => (
+                services.slice(0, 5).map(s => (
                   <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
                     <div>
                       <div style={{ fontWeight: 600 }}>{s.title}</div>
@@ -170,9 +173,9 @@ export default function AdminDashboard() {
       </main>
 
       <nav className="bottom-nav">
-        <Link to="/admin" className="bottom-nav-item active"><LayoutDashboard size={24} /><span>Stats</span></Link>
-        <Link to="#" className="bottom-nav-item"><Users size={24} /><span>Pros</span></Link>
-        <Link to="#" className="bottom-nav-item"><Activity size={24} /><span>Live Ops</span></Link>
+        <button onClick={() => navigate('/admin')} className="bottom-nav-item active" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}><LayoutDashboard size={24} /><span>Stats</span></button>
+        <button onClick={() => navigate('/admin/partners')} className="bottom-nav-item" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}><Users size={24} /><span>Pros</span></button>
+        <button onClick={() => navigate('/admin/orders')} className="bottom-nav-item" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}><Activity size={24} /><span>Orders</span></button>
         <div className="bottom-nav-item" onClick={handleLogout} style={{ cursor: 'pointer' }}><LogOut size={24} /><span>Logout</span></div>
       </nav>
     </div>

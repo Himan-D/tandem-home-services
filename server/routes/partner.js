@@ -126,7 +126,7 @@ module.exports = function (prisma, io, services) {
         data: { status: 'accepted', partnerId: req.user.id },
       });
       if (result.count === 0) return res.status(409).json({ error: 'Another partner accepted' });
-      await notifyUser(job.customerId, 'in_app', 'Job Accepted', `${req.user.name} accepted your ${job.serviceTitle} request.`);
+      await notifyUser(job.customerId, 'in_app', 'Job Accepted', `${req.user.name} accepted your ${job.serviceTitle} request.`, { bookingId: jobId });
       io.to(`user:${job.customerId}`).emit('booking:updated', { id: jobId, status: 'accepted', partnerId: req.user.id });
     } else if (status === 'completed') {
       await prisma.booking.updateMany({
@@ -137,7 +137,7 @@ module.exports = function (prisma, io, services) {
         where: { id: req.user.id },
         data: { jobsCompleted: { increment: 1 } },
       });
-      await notifyUser(job.customerId, 'email', 'Job Completed', `${job.serviceTitle} complete! Please rate.`);
+      await notifyUser(job.customerId, 'email', 'Job Completed', `${job.serviceTitle} complete! Please rate.`, { bookingId: jobId });
       io.to(`user:${job.customerId}`).emit('booking:updated', { id: jobId, status: 'completed' });
     } else if (status === 'declined') {
       await prisma.declinedBooking.upsert({

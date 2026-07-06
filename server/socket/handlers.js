@@ -110,7 +110,7 @@ function setupSocketHandlers(io, prisma, services) {
         where: { id: bookingId },
         data: { status: 'accepted', partnerId: user.id },
       });
-      await notifyUser(booking.customerId, 'in_app', 'Job Accepted', `${user.name} has accepted your request.`);
+      await notifyUser(booking.customerId, 'in_app', 'Job Accepted', `${user.name} has accepted your request.`, { bookingId });
       io.to(`user:${booking.customerId}`).emit('booking:updated', {
         id: bookingId,
         status: 'accepted',
@@ -142,7 +142,7 @@ function setupSocketHandlers(io, prisma, services) {
         where: { id: user.id },
         data: { jobsCompleted: { increment: 1 } },
       });
-      await notifyUser(booking.customerId, 'email', 'Service Complete!', 'Please rate your experience.');
+      await notifyUser(booking.customerId, 'email', 'Service Complete!', 'Please rate your experience.', { bookingId });
       io.to(`user:${booking.customerId}`).emit('booking:updated', { id: bookingId, status: 'completed' });
       socket.emit('booking:completed', { id: bookingId });
     });

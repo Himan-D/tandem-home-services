@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
+const webPush = require('web-push');
 
 const config = require('./config');
 const logger = require('./lib/logger');
@@ -29,6 +30,10 @@ async function boot() {
   await connect();
   await runSchema();
   await bootstrapAdmin();
+
+  if (config.vapid.publicKey && config.vapid.privateKey) {
+    webPush.setVapidDetails(config.vapid.subject, config.vapid.publicKey, config.vapid.privateKey);
+  }
   const { pub, sub, bull } = await redis.connect();
 
   require('./event-bus');
@@ -83,25 +88,138 @@ async function boot() {
 
   const { sendEmail } = require('./lib/email');
   const { sendSMS } = require('./lib/sms');
+  const emailTemplates = require('./lib/email-templates');
 
-  async function notifyUser(userId, method, title, message) {
+  const CATEGORY_BY_TITLE = {
+    'Welcome to Lumina': 'account',
+    'Your Lumina Code': 'account',
+    'Password Reset': 'account',
+    'Password Changed': 'account',
+    'Booking Confirmed': 'bookings',
+    'Booking Cancelled': 'bookings',
+    'New Rating': 'bookings',
+    'New Complaint': 'bookings',
+    'Onboarding Complete': 'payouts',
+    'Job Accepted': 'bookings',
+    'Job Completed': 'bookings',
+    'Service Complete!': 'bookings',
+    'Payout Requested': 'payouts',
+    'SOS Alert': 'sos',
+  };
+
+  function inferCategory(title) {
+    if (title?.startsWith('Application')) return 'payouts';
+    if (title?.startsWith('Payout')) return 'payouts';
+    return CATEGORY_BY_TITLE[title] || 'bookings';
+  }
+
+  async function getPrefs(userId) {
+    try {
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT * FROM notification_preferences WHERE user_id = $1`, userId
+      );
+      if (rows.length > 0) return rows[0];
+    } catch { }
+    return null;
+  }
+
+  const CHANNEL_COLUMNS = {
+    email: { bookings: 'email_bookings', promotions: 'email_promotions', payouts: 'email_payouts', chat: 'email_chat' },
+    sms: { bookings: 'sms_bookings', promotions: 'sms_offers', payouts: 'sms_payouts' },
+    push: { bookings: 'push_bookings', chat: 'push_chat', reminders: 'push_reminders', payouts: 'push_reminders', promotions: 'push_reminders' },
+  };
+
+  function prefAllows(prefs, channel, category) {
+    if (!prefs) return true;
+    const mapping = CHANNEL_COLUMNS[channel];
+    if (!mapping) return true;
+    const col = mapping[category] || `${channel}_${category}`;
+    if (col in prefs) return !!prefs[col];
+    return true;
+  }
+
+  async function sendPushNotification(userId, title, message, data = {}) {
+    if (!config.vapid.publicKey || !config.vapid.privateKey) return;
+    try {
+      const subs = await prisma.$queryRawUnsafe(
+        `SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = $1`, userId
+      );
+      for (const sub of subs) {
+        const pushSub = { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } };
+        const payload = {
+          title,
+          body: message,
+          tag: 'tandem',
+          bookingId: data.bookingId,
+          url: data.bookingId ? `/booking-status/${data.bookingId}` : data.url || '/',
+        };
+        webPush.sendNotification(pushSub, JSON.stringify(payload))
+          .catch((err) => {
+            if (err.statusCode === 410 || err.statusCode === 404) {
+              prisma.$executeRawUnsafe(
+                `DELETE FROM push_subscriptions WHERE endpoint = $1`, sub.endpoint
+              ).catch(() => {});
+            }
+            logger.error({ err: err.message, userId }, 'Push send failed');
+          });
+      }
+    } catch (err) {
+      logger.error({ err: err.message, userId }, 'Push send query failed');
+    }
+  }
+
+  async function getUserUnsubscribeUrl(userId) {
+    try {
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT token FROM email_unsubscribe_tokens WHERE user_id = $1 AND expires_at > NOW()`, userId
+      );
+      if (rows.length > 0) return `${config.corsOrigin[0] || 'http://localhost:5173'}/email/unsubscribe?token=${rows[0].token}`;
+    } catch {}
+    return '';
+  }
+
+  async function notifyUser(userId, method, title, message, data = {}) {
     await prisma.notification.create({
       data: { userId, title, message, type: method },
     });
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true, phone: true } });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true, phone: true },
+    });
+
+    const category = inferCategory(title);
+    const prefs = await getPrefs(userId);
+
     if (user) {
+      const unsubscribeUrl = await getUserUnsubscribeUrl(userId);
+      if (unsubscribeUrl) emailTemplates.setUnsubscribeUrl(unsubscribeUrl);
+      const html = emailTemplates.render(title, message, user.name);
+      emailTemplates.setUnsubscribeUrl('');
+
       if ((method === 'email' || method === 'both') && user.email) {
-        sendEmail({ to: user.email, subject: title, text: message }).catch((err) =>
-          logger.error({ err: err.message, userId }, 'Email send failed')
-        );
+        if (prefAllows(prefs, 'email', category) || category === 'account' || category === 'sos') {
+          sendEmail({ to: user.email, subject: title, text: message, html }).catch((err) =>
+            logger.error({ err: err.message, userId }, 'Email send failed')
+          );
+        }
       }
       if ((method === 'sms' || method === 'both') && user.phone) {
-        sendSMS({ to: user.phone, message }).catch((err) =>
-          logger.error({ err: err.message, userId }, 'SMS send failed')
-        );
+        if (prefAllows(prefs, 'sms', category) || category === 'account' || category === 'sos') {
+          sendSMS({ to: user.phone, message }).catch((err) =>
+            logger.error({ err: err.message, userId }, 'SMS send failed')
+          );
+        }
       }
     }
-    io.to(`user:${userId}`).emit('notification', { title, message });
+
+    if (method !== 'in_app') {
+      if (prefAllows(prefs, 'push', category) || category === 'account' || category === 'sos') {
+        sendPushNotification(userId, title, message, data);
+      }
+    }
+
+    io.to(`user:${userId}`).emit('notification', { title, message, ...data });
   }
 
   const sharedServices = {
@@ -128,6 +246,7 @@ async function boot() {
   app.use('/api/location', require('./routes/location')(prisma, io, sharedServices));
   app.use('/api/chat', require('./routes/chat')(prisma, io));
   app.use('/api', require('./routes/partner')(prisma, io, sharedServices));
+  app.use('/api/admin', require('./routes/admin-email-preview')());
   app.use('/api/admin', require('./routes/admin')(prisma, io, sharedServices));
   app.use('/api/recommendations', require('./routes/recommendations')(prisma, io, sharedServices));
   app.use('/api/tracking', require('./routes/tracking')(prisma, io, sharedServices));
@@ -136,6 +255,11 @@ async function boot() {
   app.use('/api/payments', require('./routes/payments')(prisma));
   app.use('/api/ai', require('./routes/ai')(prisma));
   app.use('/api/sos', require('./routes/sos')(prisma, io, sharedServices));
+  app.use('/api/payouts', require('./routes/payouts')(prisma, io, sharedServices));
+  app.use('/api/notification-preferences', require('./routes/notification-preferences')(prisma));
+  app.use('/api/push-subscriptions', require('./routes/push-subscriptions')(prisma));
+  app.use('/api/notifications', require('./routes/notifications')(prisma));
+  app.use('/api/email', require('./routes/email-unsubscribe')(prisma));
 
   app.get('/health', liveness);
   app.get('/healthz', liveness);

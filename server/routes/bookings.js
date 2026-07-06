@@ -77,7 +77,7 @@ module.exports = function (prisma, io, services) {
     await prisma.userInteraction.create({
       data: { userId: req.user.id, serviceId, rating: 1.0 },
     });
-    await notifyUser(req.user.id, 'in_app', 'Booking Confirmed', `Your booking for ${title} has been received.`);
+    await notifyUser(req.user.id, 'in_app', 'Booking Confirmed', `Your booking for ${title} has been received.`, { bookingId: jobId });
 
     res.status(201).json({ id: jobId, serviceId, serviceTitle: title, location, time, payout, status, partnerId, discountPercent });
 
@@ -104,6 +104,16 @@ module.exports = function (prisma, io, services) {
   }));
 
   router.post('/:id/cancel', authenticateToken, asyncHandler(async (req, res) => {
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bookings' AND column_name = 'cancellation_reason') THEN
+          ALTER TABLE bookings ADD COLUMN cancellation_reason TEXT;
+          ALTER TABLE bookings ADD COLUMN cancelled_at TIMESTAMP;
+          ALTER TABLE bookings ADD COLUMN cancelled_by INTEGER REFERENCES users(id);
+        END IF;
+      END $$;
+    `);
+
     const booking = await prisma.booking.findFirst({
       where: { id: req.params.id, customerId: req.user.id },
     });
@@ -115,10 +125,12 @@ module.exports = function (prisma, io, services) {
     if (booking.status === 'pending') refundPercent = 100;
     else if (booking.status === 'accepted') refundPercent = 75;
 
-    await prisma.booking.update({
-      where: { id: req.params.id },
-      data: { status: 'cancelled' },
-    });
+    const reason = req.body.reason || 'Not specified';
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE bookings SET status = 'cancelled', cancellation_reason = $1, cancelled_at = NOW(), cancelled_by = $2 WHERE id = $3`,
+      reason, req.user.id, req.params.id
+    );
 
     if (refundPercent > 0) {
       const paidAmount = Math.floor(booking.payout / 0.75);
@@ -127,15 +139,15 @@ module.exports = function (prisma, io, services) {
         where: { id: req.user.id },
         data: { walletBalance: { increment: refundValue } },
       });
-      await notifyUser(req.user.id, 'both', 'Booking Cancelled', `$${refundValue} refunded to wallet.`);
+      await notifyUser(req.user.id, 'both', 'Booking Cancelled', `$${refundValue} refunded to wallet. Reason: ${reason}`, { bookingId: Number(req.params.id) });
     }
 
     if (booking.partnerId) {
-      await notifyUser(booking.partnerId, 'in_app', 'Booking Cancelled', `Booking ${booking.serviceTitle} cancelled.`);
-      io.to(`user:${booking.partnerId}`).emit('booking:cancelled', { id: req.params.id });
+      await notifyUser(booking.partnerId, 'in_app', 'Booking Cancelled', `Booking ${booking.serviceTitle} cancelled. Reason: ${reason}`, { bookingId: Number(req.params.id) });
+      io.to(`user:${booking.partnerId}`).emit('booking:cancelled', { id: req.params.id, reason });
     }
 
-    res.json({ success: true, refundPercent });
+    res.json({ success: true, refundPercent, reason });
   }));
 
   router.post('/:id/rate', authenticateToken, validate(ratingSchema), asyncHandler(async (req, res) => {
@@ -173,7 +185,7 @@ module.exports = function (prisma, io, services) {
       });
     }
 
-    await notifyUser(job.partnerId, 'both', 'New Rating', `You received a ${rating}-star rating.`);
+    await notifyUser(job.partnerId, 'both', 'New Rating', `You received a ${rating}-star rating.`, { bookingId });
     res.json({ success: true });
   }));
 
@@ -187,7 +199,7 @@ module.exports = function (prisma, io, services) {
       select: { id: true },
     });
     if (admin) {
-      await notifyUser(admin.id, 'email', 'New Complaint', `Complaint for job ${bookingId}: ${reason}`);
+      await notifyUser(admin.id, 'email', 'New Complaint', `Complaint for job ${bookingId}: ${reason}`, { bookingId });
     }
     res.json({ success: true });
   }));

@@ -40,8 +40,12 @@ export default function Account() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><CreditCard size={20} /> Payment Methods</div>
               <ChevronRight size={16} />
             </button>
-            <button className="sidebar-link" style={{ borderRadius: 0, justifyContent: 'space-between', padding: '1rem 1.5rem' }} onClick={() => navigate('/page/notifications')}>
+            <button className="sidebar-link" style={{ borderRadius: 0, justifyContent: 'space-between', padding: '1rem 1.5rem' }} onClick={() => navigate('/account/notifications')}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><Bell size={20} /> Notifications</div>
+              <ChevronRight size={16} />
+            </button>
+            <button className="sidebar-link" style={{ borderRadius: 0, justifyContent: 'space-between', padding: '1rem 1.5rem' }} onClick={() => navigate('/notifications/history')}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><Bell size={20} /> Notification History</div>
               <ChevronRight size={16} />
             </button>
             <button className="sidebar-link" style={{ borderRadius: 0, justifyContent: 'space-between', padding: '1rem 1.5rem' }} onClick={() => navigate('/page/security')}>

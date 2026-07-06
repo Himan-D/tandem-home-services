@@ -37,6 +37,19 @@
   --transition: all 0.2s ease-in-out;
 }
 
+[data-theme="dark"] {
+  --bg-main: hsl(220, 30%, 8%);
+  --bg-card: hsl(220, 25%, 12%);
+  --bg-hover: hsl(220, 20%, 16%);
+  --text-main: hsl(220, 15%, 90%);
+  --text-muted: hsl(220, 10%, 60%);
+  --border: hsl(220, 15%, 20%);
+  --glass-bg: rgba(20, 25, 35, 0.9);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  --primary-bg: rgba(5, 172, 95, 0.15);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

@@ -7,6 +7,13 @@
     <meta name="theme-color" content="#05ac5f" />
     <link rel="manifest" href="/manifest.json" />
     <title>Tandem | On-Demand Home Services</title>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        });
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

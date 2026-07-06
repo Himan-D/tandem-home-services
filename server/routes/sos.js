@@ -37,7 +37,8 @@ module.exports = function (prisma, io, services) {
         admin.id,
         'email',
         '🚨 SOS Alert',
-        `User #${req.user.id} triggered an SOS.${bookingId ? ` Booking: ${bookingId}` : ''}${lat && lng ? ` Location: ${lat}, ${lng}` : ''}`
+        `User #${req.user.id} triggered an SOS.${bookingId ? ` Booking: ${bookingId}` : ''}${lat && lng ? ` Location: ${lat}, ${lng}` : ''}`,
+        { bookingId: bookingId || undefined }
       );
     }
 
