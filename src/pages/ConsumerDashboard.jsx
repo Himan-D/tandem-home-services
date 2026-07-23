@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, CheckCircle, MapPin, Calendar, AlertTriangle } from 'lucide-react';
+import { Star, CheckCircle, MapPin, Calendar, AlertTriangle, DollarSign, XCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { API_BASE } from '../config';
 import QuickRebook from '../components/QuickRebook';
+import CancelBookingModal from '../components/CancelBookingModal';
 
 export default function ConsumerDashboard() {
   const navigate = useNavigate();
@@ -16,7 +17,15 @@ export default function ConsumerDashboard() {
   const [review, setReview] = useState('');
   const [complaintReason, setComplaintReason] = useState('Poor Service Quality');
   const [complaintDesc, setComplaintDesc] = useState('');
-  
+  const [tipTarget, setTipTarget] = useState(null);
+  const [tipAmount, setTipAmount] = useState(5);
+  const [tipSending, setTipSending] = useState(false);
+  const [tipError, setTipError] = useState('');
+  const [tipSuccess, setTipSuccess] = useState('');
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelSuccess, setCancelSuccess] = useState('');
+  const [cancelError, setCancelError] = useState('');
+
   const { token } = useAuth();
   const { on } = useSocket();
 
@@ -73,6 +82,50 @@ export default function ConsumerDashboard() {
       return;
     }
     setComplaintTarget(null); setComplaintDesc(''); fetchBookings();
+  };
+
+  const submitTip = async () => {
+    if (!tipTarget || tipAmount < 1) return;
+    setTipSending(true); setTipError(''); setTipSuccess('');
+    try {
+      const res = await fetch(`${API_BASE}/api/tips`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId: tipTarget, amount: Math.round(tipAmount * 100) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send tip');
+      setTipSuccess(`$${tipAmount.toFixed(2)} tip sent!`);
+      setTimeout(() => { setTipTarget(null); setTipSuccess(''); }, 2000);
+    } catch (e) {
+      setTipError(e.message);
+    }
+    setTipSending(false);
+  };
+
+  const handleCancelBooking = async ({ reason, comments }) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/bookings/${cancelTarget}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ reason, comments })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to cancel booking');
+      setCancelSuccess('Booking cancelled successfully');
+      setCancelTarget(null);
+      fetchBookings();
+      setTimeout(() => setCancelSuccess(''), 3000);
+    } catch (e) {
+      setCancelError(e.message);
+    }
+  };
+
+  const canCancelBooking = (booking) => {
+    return booking.status === 'pending' || booking.status === 'accepted';
   };
 
   return (
@@ -132,6 +185,62 @@ export default function ConsumerDashboard() {
         </div>
       )}
 
+      {tipTarget && (
+        <div className="card glass animate-fade-up" style={{ marginBottom: '2rem', border: '2px solid var(--primary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+            <DollarSign size={24} color="var(--primary)" />
+            <h3 style={{ margin: 0 }}>Leave a Tip</h3>
+          </div>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>Show your appreciation for great service!</p>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+            {[5, 10, 15, 20].map(amount => (
+              <button key={amount} onClick={() => setTipAmount(amount)}
+                className={tipAmount === amount ? 'btn-primary' : 'btn-outline'}
+                style={{ flex: 1, minWidth: '60px', justifyContent: 'center' }}>
+                ${amount}
+              </button>
+            ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flex: 1, minWidth: '80px' }}>
+              <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>$</span>
+              <input type="number" min="1" max="500" value={tipAmount}
+                onChange={e => setTipAmount(parseFloat(e.target.value) || 0)}
+                style={{ width: '100%', padding: '0.5rem' }} />
+            </div>
+          </div>
+          {tipError && <p style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: '0.5rem' }}>{tipError}</p>}
+          {tipSuccess && <p style={{ color: 'var(--success)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>{tipSuccess}</p>}
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button className="btn-primary" onClick={submitTip} disabled={tipSending || tipAmount < 1}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <DollarSign size={16} /> {tipSending ? 'Sending...' : `Send $${tipAmount.toFixed(2)}`}
+            </button>
+            <button className="btn-outline" onClick={() => { setTipTarget(null); setTipError(''); setTipSuccess(''); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {cancelSuccess && (
+        <div className="card glass animate-fade-up" style={{ marginBottom: '2rem', border: '2px solid var(--success)', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <CheckCircle size={20} color="var(--success)" />
+          <span style={{ color: 'var(--success)', fontWeight: 600 }}>{cancelSuccess}</span>
+        </div>
+      )}
+
+      {cancelError && (
+        <div className="card glass animate-fade-up" style={{ marginBottom: '2rem', border: '2px solid var(--danger)', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <XCircle size={20} color="var(--danger)" />
+          <span style={{ color: 'var(--danger)', fontWeight: 600 }}>{cancelError}</span>
+        </div>
+      )}
+
+      {cancelTarget && (
+        <CancelBookingModal
+          booking={bookings.find(b => b.id === cancelTarget)}
+          onCancel={() => { setCancelTarget(null); setCancelError(''); }}
+          onConfirm={handleCancelBooking}
+        />
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {loading ? (
           <p style={{ color: 'var(--text-muted)' }}>Loading bookings...</p>
@@ -164,18 +273,36 @@ export default function ConsumerDashboard() {
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>${Math.floor(job.payout / 0.75).toFixed(2)}</div>
                   {job.status === 'pending' && (
-                    <button 
-                      className="btn-primary" 
-                      style={{ marginTop: '1rem', padding: '0.5rem 1rem', fontSize: '0.875rem', background: 'var(--success)' }} 
-                      onClick={() => navigate(`/booking-status/${job.id}`)}
-                    >
-                      Waiting for Match
-                    </button>
+                    <>
+                      <button
+                        className="btn-primary"
+                        style={{ marginTop: '1rem', padding: '0.5rem 1rem', fontSize: '0.875rem', background: 'var(--success)' }}
+                        onClick={() => navigate(`/booking-status/${job.id}`)}
+                      >
+                        Waiting for Match
+                      </button>
+                      <button
+                        className="btn-outline"
+                        style={{ marginTop: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.875rem', color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                        onClick={() => setCancelTarget(job.id)}
+                      >
+                        Cancel Booking
+                      </button>
+                    </>
                   )}
                   {job.status === 'accepted' && (
-                    <button className="btn-primary" style={{ marginTop: '1rem', padding: '0.5rem 1rem', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }} onClick={() => navigate(`/dashboard/track/${job.id}`)}>
-                      Track Pro
-                    </button>
+                    <>
+                      <button className="btn-primary" style={{ marginTop: '1rem', padding: '0.5rem 1rem', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }} onClick={() => navigate(`/dashboard/track/${job.id}`)}>
+                        Track Pro
+                      </button>
+                      <button
+                        className="btn-outline"
+                        style={{ marginTop: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.875rem', color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                        onClick={() => setCancelTarget(job.id)}
+                      >
+                        Cancel Booking
+                      </button>
+                    </>
                   )}
                   {job.status === 'completed' && job.rated === 0 && (
                     <button className="btn-primary" style={{ marginTop: '1rem', padding: '0.5rem 1rem', fontSize: '0.875rem' }} onClick={() => setRatingTarget(job.id)}>
@@ -190,6 +317,9 @@ export default function ConsumerDashboard() {
                   {job.status === 'completed' && (
                     <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                       <QuickRebook bookingId={job.id} serviceId={job.service_id} />
+                      <button className="btn-primary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }} onClick={() => { setTipTarget(job.id); setTipAmount(5); }}>
+                        <DollarSign size={14} /> Tip
+                      </button>
                       <button className="btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => setComplaintTarget(job.id)}>
                         Report Issue
                       </button>

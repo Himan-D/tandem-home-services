@@ -146,5 +146,30 @@ module.exports = function (prisma) {
     res.json(items);
   }));
 
+  router.delete('/:id/inventory/:itemId', authenticateToken, requireRole('admin'), asyncHandler(async (req, res) => {
+    const darkStoreId = parseInt(req.params.id);
+    const itemId = req.params.itemId;
+
+    // Check if inventory item exists
+    const existingItem = await prisma.inventory.findUnique({
+      where: {
+        darkStoreId_serviceId: { darkStoreId, serviceId: itemId }
+      }
+    });
+
+    if (!existingItem) {
+      return res.status(404).json({ error: 'Inventory item not found' });
+    }
+
+    // Delete the inventory item
+    await prisma.inventory.delete({
+      where: {
+        darkStoreId_serviceId: { darkStoreId, serviceId: itemId }
+      }
+    });
+
+    res.json({ success: true });
+  }));
+
   return router;
 };

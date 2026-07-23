@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '../config';
-import { ClipboardList, RefreshCw, X, LogOut, Users, Briefcase, Tag, Warehouse } from 'lucide-react';
+import { ClipboardList, RefreshCw, X, LogOut, Users, Briefcase, Tag, Warehouse, Trash2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const STATUS_COLORS = {
@@ -18,6 +18,9 @@ export default function AdminOrders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteSuccess, setDeleteSuccess] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const { token, logout } = useAuth();
   const navigate = useNavigate();
   const headers = { 'Authorization': `Bearer ${token}` };
@@ -38,6 +41,25 @@ export default function AdminOrders() {
   useEffect(() => { fetchOrders(); }, []);
 
   const handleLogout = () => { logout(); navigate('/'); };
+
+  const handleDeleteOrder = async (orderId) => {
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/bookings/${orderId}`, {
+        method: 'DELETE',
+        headers
+      });
+      if (!res.ok) throw new Error('Failed to delete order');
+      setDeleteSuccess('Order deleted successfully');
+      setDeleteTarget(null);
+      fetchOrders();
+      setTimeout(() => setDeleteSuccess(''), 3000);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   return (
     <div className="dashboard-layout">
@@ -71,6 +93,76 @@ export default function AdminOrders() {
           </div>
         )}
 
+        {deleteSuccess && (
+          <div style={{ padding: '1rem', background: 'rgba(34,197,94,0.1)', border: '1px solid var(--success)', borderRadius: 'var(--radius-md)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--success)' }}>
+            {deleteSuccess}
+            <button onClick={() => setDeleteSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}><X size={18} /></button>
+          </div>
+        )}
+
+        {deleteTarget && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}>
+            <div className="card glass" style={{
+              maxWidth: '400px',
+              width: '90%',
+              border: '2px solid var(--danger)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', color: 'var(--danger)' }}>
+                <AlertTriangle size={24} />
+                <h3 style={{ margin: 0 }}>Confirm Delete</h3>
+              </div>
+              <p style={{ marginBottom: '1rem', color: 'var(--text-muted)' }}>
+                Are you sure you want to delete order #{String(deleteTarget).padStart(5, '0')}? This action cannot be undone.
+              </p>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                <button
+                  className="btn-outline"
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={deleteLoading}
+                  style={{ minWidth: '80px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn-primary"
+                  onClick={() => handleDeleteOrder(deleteTarget)}
+                  disabled={deleteLoading}
+                  style={{
+                    minWidth: '80px',
+                    background: 'var(--danger)',
+                    borderColor: 'var(--danger)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    justifyContent: 'center'
+                  }}
+                >
+                  {deleteLoading ? (
+                    <>
+                      <RefreshCw size={16} className="spinner" /> Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={16} /> Delete
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="card glass" style={{ textAlign: 'center', padding: '3rem' }}>
             <RefreshCw size={32} className="spinner" color="var(--primary)" />
@@ -94,6 +186,7 @@ export default function AdminOrders() {
                   <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Status</th>
                   <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Amount</th>
                   <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Date</th>
+                  <th style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -118,6 +211,25 @@ export default function AdminOrders() {
                     <td style={{ padding: '1rem', fontWeight: 600 }}>${(o.amount || 0).toFixed(2)}</td>
                     <td style={{ padding: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                       {o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '—'}
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      <button
+                        onClick={() => setDeleteTarget(o.id)}
+                        className="btn-outline"
+                        disabled={deleteLoading}
+                        style={{
+                          padding: '0.4rem 0.8rem',
+                          fontSize: '0.8rem',
+                          color: 'var(--danger)',
+                          borderColor: 'var(--danger)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          cursor: deleteLoading ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        <Trash2 size={14} /> Delete
+                      </button>
                     </td>
                   </tr>
                 ))}

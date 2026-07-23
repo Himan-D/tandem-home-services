@@ -190,5 +190,157 @@ module.exports = function (prisma, io, services) {
     res.json(enriched);
   }));
 
+  // User Management Endpoints
+  router.post('/users', asyncHandler(async (req, res) => {
+    const bcrypt = require('bcrypt');
+    const { name, email, phone, password, role, location, status } = req.body;
+
+    if (!name || !email || !phone || !password) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    try {
+      const hash = await bcrypt.hash(password, 10);
+      const user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          phone,
+          password: hash,
+          role: role || 'customer',
+          location: location || null,
+          status: status || 'active'
+        },
+        select: {
+          id: true, name: true, email: true, phone: true, role: true,
+          location: true, status: true, isPlusMember: true, createdAt: true
+        }
+      });
+
+      res.status(201).json(user);
+    } catch (err) {
+      if (err.code === 'P2002') return res.status(400).json({ error: 'Email already exists' });
+      logger.error({ err: err.message }, 'User creation failed');
+      res.status(500).json({ error: 'User creation failed' });
+    }
+  }));
+
+  router.put('/users/:id', asyncHandler(async (req, res) => {
+    const { name, email, phone, location, status, isPlusMember } = req.body;
+    const userId = parseInt(req.params.id);
+
+    try {
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(name && { name }),
+          ...(email && { email }),
+          ...(phone && { phone }),
+          ...(location !== undefined && { location }),
+          ...(status && { status }),
+          ...(isPlusMember !== undefined && { isPlusMember: isPlusMember ? 1 : 0 })
+        },
+        select: {
+          id: true, name: true, email: true, phone: true, role: true,
+          location: true, status: true, isPlusMember: true, createdAt: true
+        }
+      });
+
+      res.json(user);
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'User not found' });
+      if (err.code === 'P2002') return res.status(400).json({ error: 'Email already exists' });
+      throw err;
+    }
+  }));
+
+  router.delete('/users/:id', asyncHandler(async (req, res) => {
+    const userId = parseInt(req.params.id);
+
+    try {
+      await prisma.user.delete({ where: { id: userId } });
+      res.json({ success: true, message: 'User deleted successfully' });
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'User not found' });
+      throw err;
+    }
+  }));
+
+  // Partner Management Endpoints
+  router.post('/partners', asyncHandler(async (req, res) => {
+    const bcrypt = require('bcrypt');
+    const { name, email, phone, password, location, status } = req.body;
+
+    if (!name || !email || !phone || !password) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    try {
+      const hash = await bcrypt.hash(password, 10);
+      const partner = await prisma.user.create({
+        data: {
+          name,
+          email,
+          phone,
+          password: hash,
+          role: 'partner',
+          location: location || null,
+          status: status || 'active'
+        },
+        select: {
+          id: true, name: true, email: true, phone: true, role: true,
+          location: true, status: true, isPlusMember: true, createdAt: true
+        }
+      });
+
+      res.status(201).json(partner);
+    } catch (err) {
+      if (err.code === 'P2002') return res.status(400).json({ error: 'Email already exists' });
+      logger.error({ err: err.message }, 'Partner creation failed');
+      res.status(500).json({ error: 'Partner creation failed' });
+    }
+  }));
+
+  router.put('/partners/:id', asyncHandler(async (req, res) => {
+    const { name, email, phone, location, status, isPlusMember } = req.body;
+    const partnerId = parseInt(req.params.id);
+
+    try {
+      const partner = await prisma.user.update({
+        where: { id: partnerId },
+        data: {
+          ...(name && { name }),
+          ...(email && { email }),
+          ...(phone && { phone }),
+          ...(location !== undefined && { location }),
+          ...(status && { status }),
+          ...(isPlusMember !== undefined && { isPlusMember: isPlusMember ? 1 : 0 })
+        },
+        select: {
+          id: true, name: true, email: true, phone: true, role: true,
+          location: true, status: true, isPlusMember: true, createdAt: true
+        }
+      });
+
+      res.json(partner);
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Partner not found' });
+      if (err.code === 'P2002') return res.status(400).json({ error: 'Email already exists' });
+      throw err;
+    }
+  }));
+
+  router.delete('/partners/:id', asyncHandler(async (req, res) => {
+    const partnerId = parseInt(req.params.id);
+
+    try {
+      await prisma.user.delete({ where: { id: partnerId } });
+      res.json({ success: true, message: 'Partner deleted successfully' });
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Partner not found' });
+      throw err;
+    }
+  }));
+
   return router;
 };

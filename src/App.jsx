@@ -9,6 +9,7 @@ import ConsumerBottomNav from './components/ConsumerBottomNav';
 import UnreadBadge from './components/UnreadBadge';
 
 const ConsumerHome = lazy(() => import('./pages/ConsumerHome'));
+const ConsumerOrders = lazy(() => import('./pages/ConsumerOrders'));
 const ConsumerBooking = lazy(() => import('./pages/ConsumerBooking'));
 const PartnerRegister = lazy(() => import('./pages/PartnerRegister'));
 const PartnerDashboard = lazy(() => import('./pages/PartnerDashboard'));
@@ -25,6 +26,7 @@ const AdminServiceAreas = lazy(() => import('./pages/AdminServiceAreas'));
 const AdminPartners = lazy(() => import('./pages/AdminPartners'));
 const AdminCustomers = lazy(() => import('./pages/AdminCustomers'));
 const AdminOrders = lazy(() => import('./pages/AdminOrders'));
+const AdminOrderManagement = lazy(() => import('./pages/AdminOrderManagement'));
 const AdminPayouts = lazy(() => import('./pages/AdminPayouts'));
 const AdminDisputes = lazy(() => import('./pages/AdminDisputes'));
 const NotificationHistory = lazy(() => import('./pages/NotificationHistory'));
@@ -97,13 +99,21 @@ export default function App({ userFromSSR }) {
               </ProtectedRoute>
             } 
           />
-          <Route 
-            path="/dashboard" 
+          <Route
+            path="/consumer/orders"
+            element={
+              <ProtectedRoute allowedRoles={['consumer', 'admin']}>
+                <ConsumerOrders />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
             element={
               <ProtectedRoute allowedRoles={['consumer', 'admin']}>
                 <ConsumerDashboard />
               </ProtectedRoute>
-            } 
+            }
           />
           <Route path="/service/:serviceId" element={<ServiceDetails />} />
           <Route 
@@ -218,6 +228,7 @@ export default function App({ userFromSSR }) {
           <Route path="/admin/partners" element={<ProtectedRoute allowedRoles={['admin']}><AdminPartners /></ProtectedRoute>} />
           <Route path="/admin/customers" element={<ProtectedRoute allowedRoles={['admin']}><AdminCustomers /></ProtectedRoute>} />
           <Route path="/admin/orders" element={<ProtectedRoute allowedRoles={['admin']}><AdminOrders /></ProtectedRoute>} />
+          <Route path="/admin/orders-management" element={<ProtectedRoute allowedRoles={['admin']}><AdminOrderManagement /></ProtectedRoute>} />
           <Route path="/admin/payouts" element={<ProtectedRoute allowedRoles={['admin']}><AdminPayouts /></ProtectedRoute>} />
           <Route path="/admin/disputes" element={<ProtectedRoute allowedRoles={['admin']}><AdminDisputes /></ProtectedRoute>} />
           <Route 

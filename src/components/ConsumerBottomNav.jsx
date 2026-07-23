@@ -1,6 +1,6 @@
 // Tandem Transition: Consumer Bottom Nav
 import { Link, useLocation } from 'react-router-dom';
-import { Home, CalendarClock, User, ShieldCheck } from 'lucide-react';
+import { Home, CalendarClock, User, ShieldCheck, Package } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function ConsumerBottomNav() {
@@ -21,9 +21,9 @@ export default function ConsumerBottomNav() {
         <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>Home</span>
       </Link>
       
-      <Link to="/dashboard" className={`bottom-nav-item ${location.pathname === '/dashboard' ? 'active' : ''}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: location.pathname === '/dashboard' ? 'var(--primary)' : 'var(--text-muted)', textDecoration: 'none', gap: '0.25rem' }}>
-        <CalendarClock size={24} />
-        <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>Bookings</span>
+      <Link to="/consumer/orders" className={`bottom-nav-item ${location.pathname === '/consumer/orders' ? 'active' : ''}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: location.pathname === '/consumer/orders' ? 'var(--primary)' : 'var(--text-muted)', textDecoration: 'none', gap: '0.25rem' }}>
+        <Package size={24} />
+        <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>Orders</span>
       </Link>
 
       <Link to="/plus" className={`bottom-nav-item ${location.pathname === '/plus' ? 'active' : ''}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: location.pathname === '/plus' ? 'var(--primary)' : 'var(--text-muted)', textDecoration: 'none', gap: '0.25rem' }}>

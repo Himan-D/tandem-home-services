@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '../config';
 import { Warehouse, Plus, Edit2, Trash2, X, Check, AlertCircle, RefreshCw, Package, LogOut, Users, Briefcase, Tag } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import DeleteInventoryModal from '../components/DeleteInventoryModal';
 
 export default function AdminDarkStores() {
   const [stores, setStores] = useState([]);
@@ -15,6 +16,8 @@ export default function AdminDarkStores() {
   const [inventory, setInventory] = useState([]);
   const [inventoryForm, setInventoryForm] = useState({ serviceId: '', quantity: '', minThreshold: '' });
   const [form, setForm] = useState({ name: '', location: '', lat: '', lng: '', isActive: 1 });
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, item: null, storeId: null });
+  const [isDeleting, setIsDeleting] = useState(false);
   const { token, logout } = useAuth();
   const navigate = useNavigate();
   const headers = { 'Authorization': `Bearer ${token}` };
@@ -107,6 +110,44 @@ export default function AdminDarkStores() {
       setInventoryForm({ serviceId: '', quantity: '', minThreshold: '' });
       toggleInventory(storeId);
     } catch (e) { setError(e.message); }
+  };
+
+  const openDeleteModal = (item, storeId) => {
+    setDeleteModal({ isOpen: true, item, storeId });
+    setError('');
+  };
+
+  const closeDeleteModal = () => {
+    setDeleteModal({ isOpen: false, item: null, storeId: null });
+  };
+
+  const confirmDeleteInventory = async () => {
+    if (!deleteModal.item || !deleteModal.storeId) return;
+
+    setIsDeleting(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/dark-stores/${deleteModal.storeId}/inventory/${deleteModal.item.service_id}`, {
+        method: 'DELETE',
+        headers
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || 'Failed to delete inventory item');
+      }
+
+      // Refresh inventory list
+      const inventoryRes = await fetch(`${API_BASE}/api/dark-stores/${deleteModal.storeId}/inventory`, { headers });
+      if (inventoryRes.ok) {
+        setInventory(await inventoryRes.json());
+      }
+
+      closeDeleteModal();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleLogout = () => { logout(); navigate('/'); };
@@ -209,11 +250,20 @@ export default function AdminDarkStores() {
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
                         {inventory.map(item => (
-                          <div key={`${item.dark_store_id}-${item.service_id}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+                          <div key={`${item.dark_store_id}-${item.service_id}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
                             <span style={{ fontWeight: 500 }}>{item.service_title || item.serviceId}</span>
-                            <span style={{ color: item.quantity <= item.min_threshold ? 'var(--danger)' : 'inherit' }}>
-                              {item.quantity} / min {item.min_threshold}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                              <span style={{ color: item.quantity <= item.min_threshold ? 'var(--danger)' : 'inherit' }}>
+                                {item.quantity} / min {item.min_threshold}
+                              </span>
+                              <button
+                                className="btn-outline"
+                                style={{ padding: '0.25rem 0.5rem', color: 'var(--danger)', borderColor: 'var(--danger)', fontSize: '0.75rem' }}
+                                onClick={() => openDeleteModal(item, s.id)}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -235,6 +285,14 @@ export default function AdminDarkStores() {
           </div>
         )}
       </main>
+
+      <DeleteInventoryModal
+        isOpen={deleteModal.isOpen}
+        onClose={closeDeleteModal}
+        onConfirm={confirmDeleteInventory}
+        item={deleteModal.item}
+        isLoading={isDeleting}
+      />
     </div>
   );
 }
